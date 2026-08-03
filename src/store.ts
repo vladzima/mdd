@@ -8,10 +8,10 @@ import {
   type TreeNode,
   type Vault,
 } from './vault'
-import { RemoteVault, saveRemote, savedRemote } from './remote'
+import { saveSsh, savedSsh, type SshConfig } from './sshConfig'
 
 const LAST_FILE = 'mdd:last-file'
-const VAULT_MODE = 'mdd:vault-mode' // 'local' | 'remote' | 'none' (missing = 'local')
+const VAULT_MODE = 'mdd:vault-mode' // 'local' | 'ssh' | 'none' (missing = 'local')
 const SIDEBAR_OPEN = 'mdd:sidebar-open'
 const SIDEBAR_WIDTH = 'mdd:sidebar-width'
 const RECENTS = 'mdd:recents'
@@ -105,7 +105,7 @@ interface Store {
   init: () => Promise<void>
   openVault: () => Promise<void>
   reopenVault: () => Promise<void>
-  connectRemote: (url: string, token: string) => Promise<void>
+  connectSsh: (cfg: SshConfig, remember: boolean) => Promise<void>
   closeVault: () => Promise<void>
   refreshTree: () => Promise<void>
   openFile: (path: string) => Promise<void>
@@ -127,6 +127,7 @@ interface Store {
 
 export const useStore = create<Store>()((set, get) => {
   async function activate(vault: Vault) {
+    await get().vault?.close?.() // drop a previous SSH session before swapping vaults
     assetCache.clear() // object URLs from a previous vault would serve the wrong files
     set({ vault, pendingVault: null, vaultName: vault.name })
     await get().refreshTree()
@@ -162,9 +163,10 @@ export const useStore = create<Store>()((set, get) => {
 
     init: async () => {
       const mode = localStorage.getItem(VAULT_MODE) ?? 'local'
-      if (mode === 'remote') {
-        const cfg = savedRemote()
-        if (cfg) await get().connectRemote(cfg.url, cfg.token).catch(() => {})
+      if (mode === 'ssh') {
+        // Only auto-reconnect when the secret was remembered; otherwise Welcome asks for it.
+        const cfg = savedSsh()
+        if (cfg?.password || cfg?.privateKey) await get().connectSsh(cfg, true).catch(() => {})
         return
       }
       const restored = await restoreVault()
@@ -190,16 +192,17 @@ export const useStore = create<Store>()((set, get) => {
       }
     },
 
-    connectRemote: async (url, token) => {
-      const vault = new RemoteVault({ url, token })
-      await vault.walk() // validates reachability + token before committing
-      saveRemote({ url, token })
-      localStorage.setItem(VAULT_MODE, 'remote')
+    connectSsh: async (cfg, remember) => {
+      const { connectSsh } = await import('./ssh') // keeps the SSH libs out of the initial load
+      const vault = await connectSsh(cfg)
+      saveSsh(cfg, remember)
+      localStorage.setItem(VAULT_MODE, 'ssh')
       await activate(vault)
     },
 
     closeVault: async () => {
       await get().saveNow()
+      await get().vault?.close?.()
       localStorage.setItem(VAULT_MODE, 'none')
       localStorage.removeItem(LAST_FILE)
       liveText = null

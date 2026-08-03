@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "test": "esbuild src/sftp.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.sftptest.mjs --log-level=error && node --import 'data:text/javascript,globalThis.self=globalThis' .sftptest.mjs; code=$?; rm -f .sftptest.mjs; exit $code"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
@@ -17,6 +18,8 @@
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.7",
     "@lezer/highlight": "^1.2.3",
+    "@microsoft/dev-tunnels-ssh": "^3.12.40",
+    "@microsoft/dev-tunnels-ssh-keys": "^3.12.40",
     "codemirror": "^6.0.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

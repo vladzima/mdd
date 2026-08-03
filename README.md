@@ -24,27 +24,25 @@ npm run dev
 
 `npm run build` typechecks and bundles; `npm run lint` runs oxlint.
 
-## Remote vault (over Cloudflare Tunnel)
 
-`agent/server.mjs` is a dependency-free Node file server. Run it on the machine
-that holds your vault, expose it with `cloudflared`, then use **Connect to
-server** on the app's welcome screen (the vault name in the sidebar switches
-vaults). Setup on the server:
+## Remote vault over SSH
 
-```
-# 1. copy the agent over
-scp agent/server.mjs you@server:~/mdd-agent/
+Open a vault that lives on any server you can already SSH into — nothing to
+install there, just sshd with its usual SFTP subsystem. On the welcome screen
+pick **Connect over SSH** and give it host, username, password (or a private key
+file) and the vault path. The vault name in the sidebar switches vaults.
 
-# 2. run it (localhost only) with a token you generate
-openssl rand -hex 32   # this is the token you'll paste into the app
-MDD_TOKEN=<token> node ~/mdd-agent/server.mjs /path/to/vault
+How it works: the browser speaks SSH end-to-end using a JavaScript SSH client;
+the app's Worker exposes `/relay`, a WebSocket-to-TCP pipe to port 22, because
+browsers can't open TCP sockets. Credentials and file contents are encrypted
+before they leave the page — the relay only ever sees ciphertext.
 
-# 3. connect the tunnel (as a service; token from the Cloudflare tunnel)
-sudo cloudflared service install <tunnel-token>
-```
-
-DNS: proxied CNAME `vault.edit.computer` → `<tunnel-id>.cfargotunnel.com`.
-The agent only accepts requests with the bearer token, jails paths to the vault
-dir, and answers CORS only for `https://edit.computer` (override: `MDD_ORIGIN`,
-comma-separated — add `http://localhost:5173` for dev). `node agent/test_agent.mjs`
-is the self-check.
+Notes:
+- Host keys are pinned on first connect (trust-on-first-use). A changed key
+  aborts the connection with a warning rather than reconnecting silently.
+- The password or key is only stored in the browser if you tick "Remember on
+  this device"; otherwise you re-enter it each session.
+- Key files must be RSA or ECDSA (PEM or PKCS#8) — the browser SSH client does
+  not implement ed25519.
+- `npm test` runs the SFTP/vault self-check against a throwaway sshd, using the
+  same WebCrypto code path browsers take.

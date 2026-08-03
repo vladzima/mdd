@@ -351,9 +351,59 @@ button {
   margin-top: 16px;
 }
 
-.connect-form {
+.connect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+  text-align: left;
+}
+
+.connect-row {
   display: flex;
   gap: 8px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.port {
+  width: 64px;
+}
+
+.file-btn {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.key-loaded {
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 0 2px;
+}
+
+.link-btn {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  padding: 0;
+}
+
+.link-btn:hover {
+  color: var(--fg);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
 }
 
 .text-input {
@@ -364,7 +414,7 @@ button {
   border-radius: 8px;
   padding: 8px 12px;
   outline: none;
-  width: 240px;
+  width: 100%;
 }
 
 .text-input:focus {

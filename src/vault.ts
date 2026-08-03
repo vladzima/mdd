@@ -187,6 +187,8 @@ export interface Vault {
   create(dirPath?: string): Promise<string>
   delete(path: string): Promise<void>
   assetFile(path: string): Promise<Blob>
+  rename?(path: string, newPath: string): Promise<void> // native move, when the backend has one
+  close?(): Promise<void> // tear down a live connection, if the backend holds one
 }
 
 export class LocalVault implements Vault {
@@ -226,6 +228,10 @@ export async function renameVia(v: Vault, path: string, newName: string): Promis
   const i = path.lastIndexOf('/')
   const newPath = i === -1 ? name : `${path.slice(0, i)}/${name}`
   if (newPath === path) return path
+  if (v.rename) {
+    await v.rename(path, newPath)
+    return newPath
+  }
   const { text } = await v.read(path)
   await v.write(newPath, text)
   await v.delete(path)

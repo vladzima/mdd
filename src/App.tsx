@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
-import { savedRemote } from './remote'
+import { Connect } from './Connect'
+import { savedSsh } from './sshConfig'
 import { supported } from './vault'
 import { Editor } from './Editor'
 import { Outline } from './Outline'
@@ -96,94 +97,44 @@ function Welcome() {
   const vaultName = useStore((s) => s.vaultName)
   const openVault = useStore((s) => s.openVault)
   const reopenVault = useStore((s) => s.reopenVault)
-  const connectRemote = useStore((s) => s.connectRemote)
-  const remote = savedRemote()
+  const ssh = savedSsh()
   const [showForm, setShowForm] = useState(false)
-  const [url, setUrl] = useState(remote?.url ?? '')
-  const [token, setToken] = useState(remote?.token ?? '')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  async function connect(u: string, t: string) {
-    setBusy(true)
-    setError('')
-    try {
-      await connectRemote(u, t)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <div className="welcome">
       <h1>mdd</h1>
-      <p className="tagline">A fast, local markdown editor for your vault.</p>
-      <div className="welcome-actions">
-        {pendingVault && (
-          <button className="btn primary" onClick={() => void reopenVault()}>
-            Reopen “{vaultName}”
-          </button>
-        )}
-        {supported && (
-          <button
-            className={`btn${pendingVault ? '' : ' primary'}`}
-            onClick={() => void openVault()}
-          >
-            Open folder
-          </button>
-        )}
-        {remote && !showForm && (
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => void connect(remote.url, remote.token)}
-          >
-            {busy ? 'Connecting…' : `Reconnect ${new URL(remote.url).hostname}`}
-          </button>
-        )}
-        {!showForm && (
+      <p className="tagline">A fast markdown editor for your vault — local folder or SSH.</p>
+      {showForm ? (
+        <Connect onCancel={() => setShowForm(false)} />
+      ) : (
+        <div className="welcome-actions">
+          {pendingVault && (
+            <button className="btn primary" onClick={() => void reopenVault()}>
+              Reopen “{vaultName}”
+            </button>
+          )}
+          {supported && (
+            <button
+              className={`btn${pendingVault ? '' : ' primary'}`}
+              onClick={() => void openVault()}
+            >
+              Open folder
+            </button>
+          )}
           <button className="btn" onClick={() => setShowForm(true)}>
-            Connect to server
+            {ssh ? `Connect to ${ssh.host}` : 'Connect over SSH'}
           </button>
-        )}
-      </div>
-      {showForm && (
-        <form
-          className="connect-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void connect(url.replace(/\/+$/, ''), token)
-          }}
-        >
-          <input
-            className="text-input"
-            placeholder="https://vault.edit.computer"
-            value={url}
-            autoFocus
-            onChange={(e) => setUrl(e.currentTarget.value)}
-          />
-          <input
-            className="text-input"
-            type="password"
-            placeholder="Token"
-            value={token}
-            onChange={(e) => setToken(e.currentTarget.value)}
-          />
-          <button className="btn primary" disabled={busy || !url || !token}>
-            {busy ? 'Connecting…' : 'Connect'}
-          </button>
-        </form>
+        </div>
       )}
-      {error && <p className="connect-error">{error}</p>}
-      {!supported && (
+      {!supported && !showForm && (
         <p className="unsupported">
-          This browser can’t open local folders (use a Chromium browser for that). Remote vaults
-          work everywhere.
+          This browser can’t open local folders (use a Chromium browser for that). SSH works
+          everywhere.
         </p>
       )}
-      <p className="hint">Files stay on disk — nothing is uploaded.</p>
+      <p className="hint">
+        Files stay on your disk or your server — nothing is stored by this app.
+      </p>
     </div>
   )
 }

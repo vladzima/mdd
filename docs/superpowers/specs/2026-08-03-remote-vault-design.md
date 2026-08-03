@@ -1,5 +1,9 @@
 # Remote vault over Cloudflare Tunnel
 
+> **Superseded the same day** by the SSH design (`2026-08-03-ssh-vault-design.md`):
+> requiring users to copy an agent onto their server and run a tunnel was too much
+> setup. The agent and its tunnel are gone; SSH replaced them.
+
 Approved 2026-08-03. Adds an in-app option to open a markdown vault that lives on a
 remote server, plus a way to switch vaults without clearing site data.
 
