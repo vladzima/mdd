@@ -148,7 +148,9 @@ export async function connectSsh(cfg: SshConfig): Promise<SshVault> {
         throw err
       }),
       30000,
-      'the server stopped responding during authentication',
+      cfg.privateKey
+        ? 'the server stopped responding during key authentication — it usually means this key is not in ~/.ssh/authorized_keys for that user'
+        : 'the server stopped responding during authentication',
     )
     if (hostKeyError) throw hostKeyError
     if (!ok) {
