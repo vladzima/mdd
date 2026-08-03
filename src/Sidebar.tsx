@@ -43,9 +43,13 @@ export function Sidebar() {
   return (
     <aside className="sidebar" style={{ width: sidebarWidth }}>
       <div className="sidebar-header">
-        <span className="vault-name" title={vaultName}>
+        <button
+          className="vault-name"
+          title="Switch vault"
+          onClick={() => void useStore.getState().closeVault()}
+        >
           {vaultName}
-        </span>
+        </button>
         <button className="icon-btn" title="New note" onClick={() => void createFile()}>
           +
         </button>

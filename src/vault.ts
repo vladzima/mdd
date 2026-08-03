@@ -176,18 +176,58 @@ export async function deleteNote(root: FileSystemDirectoryHandle, path: string):
   await dir.removeEntry(path.slice(i + 1))
 }
 
+// --- Vault interface: local (FSA) and remote agent impls share this ---
+
+export interface Vault {
+  readonly name: string
+  walk(): Promise<VaultScan>
+  read(path: string): Promise<{ text: string; mtime: number }>
+  mtime(path: string): Promise<number>
+  write(path: string, text: string): Promise<number>
+  create(dirPath?: string): Promise<string>
+  delete(path: string): Promise<void>
+  assetFile(path: string): Promise<Blob>
+}
+
+export class LocalVault implements Vault {
+  readonly handle: FileSystemDirectoryHandle
+  constructor(handle: FileSystemDirectoryHandle) {
+    this.handle = handle
+  }
+  get name() {
+    return this.handle.name
+  }
+  walk() {
+    return walkVault(this.handle)
+  }
+  read(path: string) {
+    return readNote(this.handle, path)
+  }
+  mtime(path: string) {
+    return noteMtime(this.handle, path)
+  }
+  write(path: string, text: string) {
+    return writeNote(this.handle, path, text)
+  }
+  create(dirPath?: string) {
+    return createNote(this.handle, dirPath)
+  }
+  delete(path: string) {
+    return deleteNote(this.handle, path)
+  }
+  assetFile(path: string) {
+    return getAssetFile(this.handle, path)
+  }
+}
+
 // ponytail: rename = copy + delete (FileSystemFileHandle.move is not universally shipped)
-export async function renameNote(
-  root: FileSystemDirectoryHandle,
-  path: string,
-  newName: string,
-): Promise<string> {
+export async function renameVia(v: Vault, path: string, newName: string): Promise<string> {
   const name = newName.endsWith('.md') ? newName : `${newName}.md`
   const i = path.lastIndexOf('/')
   const newPath = i === -1 ? name : `${path.slice(0, i)}/${name}`
   if (newPath === path) return path
-  const { text } = await readNote(root, path)
-  await writeNote(root, newPath, text)
-  await deleteNote(root, path)
+  const { text } = await v.read(path)
+  await v.write(newPath, text)
+  await v.delete(path)
   return newPath
 }

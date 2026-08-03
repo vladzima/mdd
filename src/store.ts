@@ -1,20 +1,17 @@
 import { create } from 'zustand'
 import {
-  createNote,
-  deleteNote,
-  getAssetFile,
-  noteMtime,
+  LocalVault,
   pickVault,
-  readNote,
-  renameNote,
+  renameVia,
   requestVaultPermission,
   restoreVault,
-  walkVault,
-  writeNote,
   type TreeNode,
+  type Vault,
 } from './vault'
+import { RemoteVault, saveRemote, savedRemote } from './remote'
 
 const LAST_FILE = 'mdd:last-file'
+const VAULT_MODE = 'mdd:vault-mode' // 'local' | 'remote' | 'none' (missing = 'local')
 const SIDEBAR_OPEN = 'mdd:sidebar-open'
 const SIDEBAR_WIDTH = 'mdd:sidebar-width'
 const RECENTS = 'mdd:recents'
@@ -85,7 +82,7 @@ function storedStrings(key: string): string[] {
 }
 
 interface Store {
-  vault: FileSystemDirectoryHandle | null
+  vault: Vault | null
   pendingVault: FileSystemDirectoryHandle | null // restored, awaiting permission gesture
   vaultName: string
   tree: TreeNode[]
@@ -108,6 +105,8 @@ interface Store {
   init: () => Promise<void>
   openVault: () => Promise<void>
   reopenVault: () => Promise<void>
+  connectRemote: (url: string, token: string) => Promise<void>
+  closeVault: () => Promise<void>
   refreshTree: () => Promise<void>
   openFile: (path: string) => Promise<void>
   onEdit: (text: string) => void
@@ -127,8 +126,9 @@ interface Store {
 }
 
 export const useStore = create<Store>()((set, get) => {
-  async function activate(handle: FileSystemDirectoryHandle) {
-    set({ vault: handle, pendingVault: null, vaultName: handle.name })
+  async function activate(vault: Vault) {
+    assetCache.clear() // object URLs from a previous vault would serve the wrong files
+    set({ vault, pendingVault: null, vaultName: vault.name })
     await get().refreshTree()
     const last = localStorage.getItem(LAST_FILE)
     if (last) await get().openFile(last).catch(() => localStorage.removeItem(LAST_FILE))
@@ -161,26 +161,67 @@ export const useStore = create<Store>()((set, get) => {
     theme: storedTheme(),
 
     init: async () => {
+      const mode = localStorage.getItem(VAULT_MODE) ?? 'local'
+      if (mode === 'remote') {
+        const cfg = savedRemote()
+        if (cfg) await get().connectRemote(cfg.url, cfg.token).catch(() => {})
+        return
+      }
       const restored = await restoreVault()
       if (!restored) return
-      if (restored.granted) await activate(restored.handle)
+      // mode 'none' (user switched away): surface the saved dir on Welcome, don't auto-open
+      if (mode === 'local' && restored.granted) await activate(new LocalVault(restored.handle))
       else set({ pendingVault: restored.handle, vaultName: restored.handle.name })
     },
 
     openVault: async () => {
       const handle = await pickVault().catch(() => null) // user cancelled the picker
-      if (handle) await activate(handle)
+      if (handle) {
+        localStorage.setItem(VAULT_MODE, 'local')
+        await activate(new LocalVault(handle))
+      }
     },
 
     reopenVault: async () => {
       const handle = get().pendingVault
-      if (handle && (await requestVaultPermission(handle))) await activate(handle)
+      if (handle && (await requestVaultPermission(handle))) {
+        localStorage.setItem(VAULT_MODE, 'local')
+        await activate(new LocalVault(handle))
+      }
+    },
+
+    connectRemote: async (url, token) => {
+      const vault = new RemoteVault({ url, token })
+      await vault.walk() // validates reachability + token before committing
+      saveRemote({ url, token })
+      localStorage.setItem(VAULT_MODE, 'remote')
+      await activate(vault)
+    },
+
+    closeVault: async () => {
+      await get().saveNow()
+      localStorage.setItem(VAULT_MODE, 'none')
+      localStorage.removeItem(LAST_FILE)
+      liveText = null
+      const restored = await restoreVault()
+      set({
+        vault: null,
+        pendingVault: restored?.handle ?? null,
+        vaultName: restored?.handle.name ?? '',
+        tree: [],
+        activePath: null,
+        doc: '',
+        dirty: false,
+        wordCount: 0,
+        outline: [],
+        outlineActive: null,
+      })
     },
 
     refreshTree: async () => {
       const { vault } = get()
       if (!vault) return
-      const scan = await walkVault(vault)
+      const scan = await vault.walk()
       mdIndex = scan.mdIndex
       assetIndex = scan.assetIndex
       set({ tree: scan.tree })
@@ -190,7 +231,7 @@ export const useStore = create<Store>()((set, get) => {
       const { vault, dirty } = get()
       if (!vault) return
       if (dirty) await get().saveNow()
-      const { text, mtime } = await readNote(vault, path)
+      const { text, mtime } = await vault.read(path)
       liveText = text
       lastMtime = mtime
       localStorage.setItem(LAST_FILE, path)
@@ -220,14 +261,14 @@ export const useStore = create<Store>()((set, get) => {
       const { vault, activePath, dirty } = get()
       if (!vault || !activePath || !dirty || liveText == null) return
       clearTimeout(saveTimer)
-      lastMtime = await writeNote(vault, activePath, liveText)
+      lastMtime = await vault.write(activePath, liveText)
       set({ dirty: false, wordCount: countWords(liveText) })
     },
 
     createFile: async (dirPath = '') => {
       const { vault } = get()
       if (!vault) return
-      const path = await createNote(vault, dirPath)
+      const path = await vault.create(dirPath)
       await get().refreshTree()
       await get().openFile(path)
     },
@@ -235,7 +276,7 @@ export const useStore = create<Store>()((set, get) => {
     deleteFile: async (path) => {
       const { vault, activePath } = get()
       if (!vault) return
-      await deleteNote(vault, path)
+      await vault.delete(path)
       setRecents(get().recents.filter((p) => p !== path))
       if (activePath === path) {
         liveText = null
@@ -256,7 +297,7 @@ export const useStore = create<Store>()((set, get) => {
       const { vault, activePath } = get()
       if (!vault || !newName.trim()) return
       if (activePath === path) await get().saveNow()
-      const newPath = await renameNote(vault, path, newName.trim())
+      const newPath = await renameVia(vault, path, newName.trim())
       setRecents(get().recents.map((p) => (p === path ? newPath : p)))
       if (activePath === path) {
         localStorage.setItem(LAST_FILE, newPath)
@@ -272,8 +313,8 @@ export const useStore = create<Store>()((set, get) => {
       await get().refreshTree()
       if (!activePath || dirty) return // ponytail: dirty local edits win; no merge UI
       try {
-        if ((await noteMtime(vault, activePath)) !== lastMtime) {
-          const { text, mtime } = await readNote(vault, activePath)
+        if ((await vault.mtime(activePath)) !== lastMtime) {
+          const { text, mtime } = await vault.read(activePath)
           liveText = text
           lastMtime = mtime
           set({
@@ -364,7 +405,7 @@ export function resolveAsset(src: string): Promise<string | null> {
       if (byName) candidates.push(byName)
       for (const path of candidates) {
         try {
-          return URL.createObjectURL(await getAssetFile(vault, path))
+          return URL.createObjectURL(await vault.assetFile(path))
         } catch {
           // try next candidate
         }
@@ -394,7 +435,7 @@ export async function openWikilink(target: string): Promise<void> {
   }
   if (!name.includes('/')) {
     // unresolved: create the note in the vault root, Obsidian-style
-    await writeNote(s.vault, direct, '')
+    await s.vault.write(direct, '')
     await s.refreshTree()
     await s.openFile(direct)
   }
