@@ -129,8 +129,17 @@ export async function connectSsh(cfg: SshConfig): Promise<SshVault> {
             }
             if (/decryption not implemented/i.test(msg)) {
               throw new Error(
-                'Passphrase-protected PEM keys are not supported. Re-export a copy in PKCS#8: ' +
-                  'ssh-keygen -p -m PKCS8 -f <copy of your key>',
+                'Passphrase-protected PEM keys are not supported. Re-encrypt a copy: ' +
+                  'openssl pkcs8 -topk8 -in <copy> -out <copy>.p8 -v2 aes-256-cbc -v2prf hmacWithSHA256',
+              )
+            }
+            // macOS ships LibreSSL, whose PKCS#8 export uses PBKDF2 with the SHA-1 PRF.
+            // The key parser walks off the end of that structure and blames the read.
+            if (/out of bounds/i.test(msg)) {
+              throw new Error(
+                'This PKCS#8 key uses the SHA-1 key-derivation the reader cannot parse ' +
+                  '(the default on macOS). Re-encrypt a copy: openssl pkcs8 -topk8 -in <copy> ' +
+                  '-out <copy>.p8 -v2 aes-256-cbc -v2prf hmacWithSHA256 — then use <copy>.p8.',
               )
             }
             throw err

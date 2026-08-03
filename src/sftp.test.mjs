@@ -168,6 +168,17 @@ try {
   assert.match(unusableKeyReason(ed), /ed25519/, 'ed25519 key explained')
   assert.equal(unusableKeyReason(pem), null, 'PEM key accepted')
 
+  // Key encryption: PKCS#8 with the SHA-1 PRF (macOS default) must be explained,
+  // not surfaced as the parser's "Read out of bounds".
+  const { importKeyBytes } = await import('@microsoft/dev-tunnels-ssh-keys')
+  execFileSync('openssl', ['pkcs8', '-topk8', '-in', path.join(dir, 'user'), '-out', path.join(dir, 'sha1prf'),
+    '-v2', 'aes-256-cbc', '-v2prf', 'hmacWithSHA1', '-passout', 'pass:pw'])
+  const sha1Err = await importKeyBytes(Buffer.from(await fs.readFile(path.join(dir, 'sha1prf'))), 'pw').then(
+    () => null,
+    (e) => e.message,
+  )
+  assert.match(sha1Err ?? '', /out of bounds/, 'library still reports the SHA-1 PRF this way')
+
   console.log('sftp/ssh vault self-check OK')
 } finally {
   await session.close().catch(() => {})
