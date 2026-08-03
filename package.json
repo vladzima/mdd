@@ -11,7 +11,8 @@
     "deploy": "npm run build && wrangler deploy",
     "test": "esbuild src/sftp.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.sftptest.mjs --log-level=error && node --import 'data:text/javascript,globalThis.self=globalThis' .sftptest.mjs; code=$?; rm -f .sftptest.mjs; exit $code",
     "dev:worker": "wrangler dev --port 8787",
-    "test:relay": "node worker/relay.test.mjs"
+    "test:relay": "node worker/relay.test.mjs",
+    "test:layout": "node src/layout.test.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

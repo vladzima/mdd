@@ -1,4 +1,5 @@
 import { EditorView } from '@codemirror/view'
+import { startResize } from './resize'
 import { useStore } from './store'
 import { editorView } from './viewRef'
 
@@ -9,35 +10,30 @@ export function Outline() {
   const setOutlineWidth = useStore((s) => s.setOutlineWidth)
   if (outline.length === 0) return null
 
-  function startResize(e: React.MouseEvent) {
-    e.preventDefault()
-    const move = (ev: MouseEvent) =>
-      setOutlineWidth(Math.min(420, Math.max(160, window.innerWidth - ev.clientX)))
-    const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-      document.body.style.cursor = ''
-    }
-    document.body.style.cursor = 'col-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-  }
-
   return (
     <aside className="outline" style={{ width: outlineWidth }}>
-      <div className="resizer left" onMouseDown={startResize} />
-      <div className="section-label">Outline</div>
-      {outline.map((h, i) => (
-        <div
-          key={`${h.line}-${i}`}
-          className={`outline-item${h.line === outlineActive ? ' active' : ''}`}
-          style={{ paddingLeft: `${10 + (h.level - 1) * 12}px` }}
-          title={h.text}
-          onClick={() => jumpToLine(h.line)}
-        >
-          {h.text}
-        </div>
-      ))}
+      <div
+        className="resizer left"
+        onPointerDown={(e) =>
+          startResize(e, (x) => setOutlineWidth(Math.min(420, Math.max(160, innerWidth - x))))
+        }
+      />
+      {/* scrolling lives on the inner element: an overflow container would clip
+          the resize strip that hangs outside the pane's left edge */}
+      <div className="outline-scroll">
+        <div className="section-label">Outline</div>
+        {outline.map((h, i) => (
+          <div
+            key={`${h.line}-${i}`}
+            className={`outline-item${h.line === outlineActive ? ' active' : ''}`}
+            style={{ paddingLeft: `${10 + (h.level - 1) * 12}px` }}
+            title={h.text}
+            onClick={() => jumpToLine(h.line)}
+          >
+            {h.text}
+          </div>
+        ))}
+      </div>
     </aside>
   )
 }

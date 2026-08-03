@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { startResize } from './resize'
 import { useStore } from './store'
 import type { TreeNode } from './vault'
 
@@ -25,20 +26,6 @@ export function Sidebar() {
     return paths
   }, [tree])
   const recentShown = recents.filter((p) => existingPaths.has(p)).slice(0, 5)
-
-  function startResize(e: React.MouseEvent) {
-    e.preventDefault()
-    const move = (ev: MouseEvent) =>
-      setSidebarWidth(Math.min(420, Math.max(180, ev.clientX)))
-    const up = () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-      document.body.style.cursor = ''
-    }
-    document.body.style.cursor = 'col-resize'
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-  }
 
   return (
     <aside className="sidebar" style={{ width: sidebarWidth }}>
@@ -85,7 +72,10 @@ export function Sidebar() {
           <Node key={node.path} node={node} depth={0} />
         ))}
       </nav>
-      <div className="resizer" onMouseDown={startResize} />
+      <div
+        className="resizer"
+        onPointerDown={(e) => startResize(e, (x) => setSidebarWidth(Math.min(420, Math.max(180, x))))}
+      />
     </aside>
   )
 }

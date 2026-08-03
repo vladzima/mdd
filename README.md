@@ -15,6 +15,20 @@ Requires a Chromium browser (Chrome, Edge, Arc, Brave); Firefox and Safari don't
 - Autosave (800 ms idle) plus ⌘S; picks up external edits (Obsidian, sync) on window focus
 - Word count, dark mode, ⌘\ toggles the sidebar, restores your last-open note
 
+## Phone and tablet
+
+Both sidebars resize by dragging with a finger, and touch targets, row actions
+and the resize strips grow on a coarse pointer (hover-only affordances are
+unreachable without a mouse).
+
+Under 700px the layout switches: the file tree becomes an overlay drawer that
+closes when you pick a note or tap outside it, the outline panel drops out, and
+the editor takes the full width. The editor does not steal focus on touch, so
+the on-screen keyboard only appears when you tap into the text.
+
+A phone can't open a local folder — no mobile browser implements
+`showDirectoryPicker()` — so use **Connect over SSH** there.
+
 ## Development
 
 ```
@@ -23,6 +37,19 @@ npm run dev
 ```
 
 `npm run build` typechecks and bundles; `npm run lint` runs oxlint.
+
+Tests, all against real implementations rather than mocks:
+
+| command | what it covers |
+| --- | --- |
+| `npm test` | SFTP client + `SshVault` against a throwaway sshd |
+| `npm run test:relay` | the Worker's WebSocket↔TCP relay, both directions |
+| `npm run test:layout` | touch resizing and the phone drawer, in real Chromium |
+
+`test:layout` needs a build plus `npm i --no-save playwright-core
+@playwright/browser-chromium`. It serves `dist/` with its own relay and sshd, so
+the browser connects over SSH exactly as it does in production. Set
+`SHOTS=<dir>` to also write phone and tablet screenshots.
 
 
 ## Remote vault over SSH
