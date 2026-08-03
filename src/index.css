@@ -355,7 +355,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 340px;
+  width: min(340px, 100%);
   text-align: left;
 }
 
@@ -369,8 +369,9 @@ button {
   min-width: 0;
 }
 
+/* flex-basis, not width: a width here loses to .text-input's and the row collapses */
 .port {
-  width: 64px;
+  flex: 0 0 64px;
 }
 
 .file-btn {
@@ -414,7 +415,7 @@ button {
   border-radius: 8px;
   padding: 8px 12px;
   outline: none;
-  width: 100%;
+  min-width: 0; /* inputs default to ~170px min-content, which breaks flex rows */
 }
 
 .text-input:focus {
