@@ -11,6 +11,7 @@ export interface SshConfig {
   path: string
   password?: string // only stored if the user chose to remember it
   privateKey?: string
+  passphrase?: string // for an encrypted key file
 }
 
 export function savedSsh(): SshConfig | null {
@@ -23,10 +24,10 @@ export function savedSsh(): SshConfig | null {
 }
 
 export function saveSsh(cfg: SshConfig, rememberSecret: boolean): void {
-  const { password, privateKey, ...rest } = cfg
+  const { password, privateKey, passphrase, ...rest } = cfg
   localStorage.setItem(
     SSH_KEY,
-    JSON.stringify(rememberSecret ? { ...rest, password, privateKey } : rest),
+    JSON.stringify(rememberSecret ? { ...rest, password, privateKey, passphrase } : rest),
   )
 }
 

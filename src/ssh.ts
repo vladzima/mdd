@@ -50,6 +50,40 @@ async function checkHostKey(hostId: string, e: SshAuthenticatingEventArgs): Prom
   if (!pinned) pinHostKey(hostId, fp)
 }
 
+// ssh-keygen has written its own "OPENSSH PRIVATE KEY" format by default since 7.8,
+// and the browser SSH client only reads PEM/PKCS#8. Say so plainly: the library
+// reports this as "Failed to decrypt key", which sends people hunting a passphrase.
+export function unusableKeyReason(pem: string): string | null {
+  if (!pem.includes('BEGIN OPENSSH PRIVATE KEY')) return null
+  let decoded = ''
+  try {
+    decoded = atob(pem.replace(/-----[^-]*-----/g, '').replace(/\s+/g, ''))
+  } catch {
+    // not decodable; fall through to the generic format message
+  }
+  if (decoded.includes('ssh-ed25519')) {
+    return (
+      'This is an ed25519 key, which this browser SSH client cannot use. Create an RSA key ' +
+      '(ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/mdd_key) and append mdd_key.pub to ' +
+      '~/.ssh/authorized_keys on the server.'
+    )
+  }
+  return (
+    'This key is in OpenSSH format, which this browser SSH client cannot read. Convert a copy: ' +
+    'cp ~/.ssh/id_rsa ~/mdd_key && ssh-keygen -p -m PEM -f ~/mdd_key — then pick ~/mdd_key here.'
+  )
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms)
+    }),
+  ]).finally(() => clearTimeout(timer)) as Promise<T>
+}
+
 // --- connect ---
 
 export async function connectSsh(cfg: SshConfig): Promise<SshVault> {
@@ -84,11 +118,38 @@ export async function connectSsh(cfg: SshConfig): Promise<SshVault> {
     await session.connect(new WebSocketStream(ws))
     const credentials: SshClientCredentials = { username: cfg.username }
     if (cfg.privateKey) {
-      credentials.publicKeys = [await importKeyBytes(Buffer.from(cfg.privateKey, 'utf8'))]
+      const unusable = unusableKeyReason(cfg.privateKey)
+      if (unusable) throw new Error(unusable)
+      credentials.publicKeys = [
+        await importKeyBytes(Buffer.from(cfg.privateKey, 'utf8'), cfg.passphrase ?? null).catch(
+          (err: unknown) => {
+            const msg = String(err)
+            if (/passphrase is required/i.test(msg)) {
+              throw new Error('This key is protected by a passphrase — enter it below the key.')
+            }
+            if (/decryption not implemented/i.test(msg)) {
+              throw new Error(
+                'Passphrase-protected PEM keys are not supported. Re-export a copy in PKCS#8: ' +
+                  'ssh-keygen -p -m PKCS8 -f <copy of your key>',
+              )
+            }
+            throw err
+          },
+        ),
+      ]
     } else {
       credentials.password = cfg.password
     }
-    const ok = await session.authenticate(credentials)
+    const ok = await withTimeout(
+      session.authenticate(credentials).catch((err: unknown) => {
+        // A server that dislikes the credential often just drops the connection,
+        // which surfaces from the library as "…disposed".
+        if (/disposed|closed/i.test(String(err))) return false
+        throw err
+      }),
+      30000,
+      'the server stopped responding during authentication',
+    )
     if (hostKeyError) throw hostKeyError
     if (!ok) {
       throw new Error(

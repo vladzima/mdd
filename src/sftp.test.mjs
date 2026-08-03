@@ -23,6 +23,7 @@ const {
 const { importKeyFile } = await import('@microsoft/dev-tunnels-ssh-keys')
 const { SshAlgorithms } = await import('@microsoft/dev-tunnels-ssh')
 const { Sftp } = await import('./sftp.ts')
+const { unusableKeyReason } = await import('./ssh.ts')
 const { SshVault } = await import('./ssh.ts')
 
 // Ask the OS for a free port so parallel/leftover runs can't collide.
@@ -155,6 +156,17 @@ try {
 
   // missing file rejects rather than hanging
   await assert.rejects(() => v.read('nope.md'), /no such file/)
+
+  // Key formats: ssh-keygen's default output is unusable here, and the library
+  // misreports it as a decryption failure — check we explain it instead.
+  execFileSync('ssh-keygen', ['-q', '-t', 'rsa', '-b', '2048', '-f', path.join(dir, 'openssh_fmt'), '-N', ''])
+  execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-f', path.join(dir, 'ed'), '-N', ''])
+  const openssh = await fs.readFile(path.join(dir, 'openssh_fmt'), 'utf8')
+  const ed = await fs.readFile(path.join(dir, 'ed'), 'utf8')
+  const pem = await fs.readFile(path.join(dir, 'user'), 'utf8')
+  assert.match(unusableKeyReason(openssh), /OpenSSH format/, 'openssh-format key explained')
+  assert.match(unusableKeyReason(ed), /ed25519/, 'ed25519 key explained')
+  assert.equal(unusableKeyReason(pem), null, 'PEM key accepted')
 
   console.log('sftp/ssh vault self-check OK')
 } finally {

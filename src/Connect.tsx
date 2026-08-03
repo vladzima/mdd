@@ -11,7 +11,9 @@ export function Connect({ onCancel }: { onCancel: () => void }) {
   const [port, setPort] = useState(String(saved?.port ?? 22))
   const [username, setUsername] = useState(saved?.username ?? '')
   const [password, setPassword] = useState(saved?.password ?? '')
-  const [privateKey, setPrivateKey] = useState('')
+  const [privateKey, setPrivateKey] = useState(saved?.privateKey ?? '')
+  const [keyName, setKeyName] = useState('')
+  const [passphrase, setPassphrase] = useState(saved?.passphrase ?? '')
   const [path, setPath] = useState(saved?.path ?? '')
   const [remember, setRemember] = useState(Boolean(saved?.password || saved?.privateKey))
   const [busy, setBusy] = useState(false)
@@ -28,7 +30,7 @@ export function Connect({ onCancel }: { onCancel: () => void }) {
           port: Number(port) || 22,
           username: username.trim(),
           path: path.trim(),
-          ...(privateKey ? { privateKey } : { password }),
+          ...(privateKey ? { privateKey, passphrase: passphrase || undefined } : { password }),
         },
         remember,
       )
@@ -64,12 +66,21 @@ export function Connect({ onCancel }: { onCancel: () => void }) {
         onChange={(e) => setUsername(e.currentTarget.value)}
       />
       {privateKey ? (
-        <div className="connect-row key-loaded">
-          <span>Private key loaded</span>
-          <button type="button" className="link-btn" onClick={() => setPrivateKey('')}>
-            use a password instead
-          </button>
-        </div>
+        <>
+          <div className="connect-row key-loaded">
+            <span className="grow">{keyName ? `Key: ${keyName}` : 'Private key loaded'}</span>
+            <button type="button" className="link-btn" onClick={() => setPrivateKey('')}>
+              use a password
+            </button>
+          </div>
+          <input
+            className="text-input"
+            type="password"
+            placeholder="Key passphrase (leave blank if none)"
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.currentTarget.value)}
+          />
+        </>
       ) : (
         <div className="connect-row">
           <input
@@ -87,7 +98,10 @@ export function Connect({ onCancel }: { onCancel: () => void }) {
               hidden
               onChange={async (e) => {
                 const file = e.currentTarget.files?.[0]
-                if (file) setPrivateKey(await file.text())
+                if (file) {
+                  setKeyName(file.name)
+                  setPrivateKey(await file.text())
+                }
               }}
             />
           </label>
