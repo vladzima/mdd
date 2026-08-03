@@ -193,7 +193,17 @@ export const useStore = create<Store>()((set, get) => {
     },
 
     connectSsh: async (cfg, remember) => {
-      const { connectSsh } = await import('./ssh') // keeps the SSH libs out of the initial load
+      // Lazy chunk keeps the SSH libs out of the initial load. A deploy replaces the
+      // hashed filename, so a tab left open since the previous version asks for a file
+      // that no longer exists and gets the SPA fallback HTML back.
+      const { connectSsh } = await import('./ssh').catch((err: unknown) => {
+        // Only a genuine fetch failure means a stale tab; anything else is a real
+        // error inside the chunk and must not be masked.
+        if (/dynamically imported module|MIME type/i.test(String(err))) {
+          throw new Error('This app was updated in the background — reload the page, then connect.')
+        }
+        throw err
+      })
       const vault = await connectSsh(cfg)
       saveSsh(cfg, remember)
       localStorage.setItem(VAULT_MODE, 'ssh')

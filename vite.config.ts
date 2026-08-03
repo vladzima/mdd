@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       'node-rsa': new URL('./src/nodeRsaStub.ts', import.meta.url).pathname,
+      stream: new URL('./src/streamStub.ts', import.meta.url).pathname,
     },
   },
 })

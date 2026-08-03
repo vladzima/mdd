@@ -2,9 +2,7 @@
 // dumb WebSocket→TCP pipe, so credentials and file data are encrypted before
 // they leave the page. Nothing to install on the server — just sshd.
 
-import { Buffer } from 'buffer'
-// The SSH library reaches for a global Buffer in several modules; browsers have none.
-;(globalThis as { Buffer?: typeof Buffer }).Buffer ??= Buffer
+import { Buffer } from 'buffer' // globals for the library are set in nodeGlobals.ts
 import {
   CommandRequestMessage,
   SshAuthenticationType,
