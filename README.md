@@ -1,35 +1,79 @@
-# mdd
+# edit.computer
 
-Browser-based local-first markdown editor for a folder of `.md` files (e.g. an Obsidian vault). Inspired by [writer-computer](https://github.com/joelbqz/writer-computer), but running entirely in the browser via the File System Access API — no server, nothing uploaded.
+A markdown editor that runs entirely in your browser and writes straight to your
+own files — a local folder, or a directory on any server you can SSH into.
 
-Requires a Chromium browser (Chrome, Edge, Arc, Brave); Firefox and Safari don't support `showDirectoryPicker()`.
+**[edit.computer](https://edit.computer)** — no account, no install, no upload.
+
+It reads and writes plain `.md` files in place, so an Obsidian vault, a Jekyll
+`_posts` directory, or a folder of notes all work as-is. Nothing is copied to a
+server owned by this project: with a local folder the files never leave your
+machine, and over SSH they go straight between your browser and your own box.
 
 ## Features
 
-- Open a local vault folder with read/write access; the grant persists across sessions (one-click re-confirm)
-- File tree sidebar (resizable, persisted) with recent files, create, rename, delete; `.obsidian`, `.git` etc. ignored
-- Live-preview editing: syntax marks hide until the cursor touches the element (Obsidian/writer.computer style)
-- Rendered tables, inline images (`![](path)` and `![[embed]]`), clickable checkboxes, horizontal rules
-- Wikilinks `[[Note]]` / `[[Note|alias]]` — click to navigate, creates the note if missing
-- Outline panel with click-to-jump and scroll position tracking
-- New notes name themselves from their first `# heading` once you move off the title line; a name you set yourself is never overwritten, and an existing file is never replaced
-- Autosave (800 ms idle) plus ⌘S; picks up external edits (Obsidian, sync) on window focus
-- Word count, dark mode, ⌘\ toggles the sidebar, restores your last-open note
+- **Live preview inline** — syntax marks hide until the cursor touches them, so
+  you edit the rendered text rather than a split pane
+- **Tables, images, task lists** rendered in place; `![](path)` and `![[embed]]`
+  both resolve against the vault
+- **Wikilinks** — `[[Note]]` and `[[Note|alias]]` navigate on click, and create
+  the note if it doesn't exist yet
+- **File tree** with folders, recent files, create, rename and delete
+- **Outline panel** that tracks your scroll position and jumps on click
+- **Self-naming notes** — a new note takes its name from the first `# heading`
+  once you move off that line, and never overwrites a name you chose or a file
+  that already exists
+- **Autosave** on idle plus <kbd>⌘S</kbd>, and it picks up edits made elsewhere
+  (Obsidian, Syncthing, git) when the window regains focus
+- Dark mode, word count, adjustable tab size, and a
+  [Vesper](https://github.com/raunofreiberg/vesper) theme
+- Works on phones and tablets, including drag-to-resize by touch
 
-## Phone and tablet
+## Opening a vault
 
-Both sidebars resize by dragging with a finger, and touch targets, row actions
-and the resize strips grow on a coarse pointer (hover-only affordances are
-unreachable without a mouse).
+Two ways in, with different browser requirements:
 
-Under 700px the layout switches: the file tree becomes an overlay drawer that
-closes when you pick a note or tap outside it, the outline panel drops out, and
-the editor takes the full width. Renaming uses the platform's own dialog rather
-than the inline field, which the on-screen keyboard would cover. The editor does
-not steal focus on touch, so the keyboard only appears when you tap into the text.
+| | How | Works in |
+| --- | --- | --- |
+| **Local folder** | Pick a directory; the permission is remembered between visits | Chromium desktop only — Firefox and Safari don't implement `showDirectoryPicker()` |
+| **Over SSH** | Host, username, password or key, and a path | Any modern browser, including iOS and Android |
 
-A phone can't open a local folder — no mobile browser implements
-`showDirectoryPicker()` — so use **Connect over SSH** there.
+No mobile browser can open a local folder, so SSH is the route on a phone or
+iPad. There is nothing to install on the server — just the sshd and SFTP
+subsystem that are already there.
+
+## How it works
+
+The editor is a static React + CodeMirror app on Cloudflare Workers. It talks to
+a vault through one small interface, with two implementations:
+
+- **Local** — the [File System Access API](https://developer.mozilla.org/docs/Web/API/File_System_Access_API).
+  The directory handle is kept in IndexedDB so the vault reopens on your next
+  visit with a single confirmation.
+- **SSH** — a JavaScript SSH client and an SFTP v3 client running *in the page*.
+  Browsers can't open TCP sockets, so the Worker exposes `/relay`, a
+  WebSocket-to-TCP pipe to port 22. The SSH session is established end to end
+  from the browser, which means the relay only ever carries ciphertext: it never
+  sees your password, your key, or your files.
+
+Host keys are pinned on first connect (trust on first use). If a host key later
+changes, the connection is refused with an explanation rather than reconnecting
+silently.
+
+Credentials are stored in the browser only if you tick "Remember on this
+device"; otherwise they live in memory for the session.
+
+### Known limits
+
+- The browser SSH client implements RSA and ECDSA, not ed25519. Keys must be PEM
+  or PKCS#8 — the app detects the common unusable formats and tells you the exact
+  command to convert a copy.
+- `/relay` checks the `Origin` header, which stops other web pages from using it,
+  but a non-browser client can forge that header and use it as a generic TCP
+  proxy. If you deploy your own, consider putting a Turnstile token or a signed
+  nonce in front of it.
+- Conflict handling is deliberately simple: if a file changed on disk while you
+  have unsaved edits, your buffer wins. There is no merge UI.
 
 ## Development
 
@@ -38,40 +82,32 @@ npm install
 npm run dev
 ```
 
-`npm run build` typechecks and bundles; `npm run lint` runs oxlint.
+`npm run build` typechecks and bundles, `npm run lint` runs oxlint.
 
-Tests, all against real implementations rather than mocks:
+The tests run against real implementations rather than mocks:
 
 | command | what it covers |
 | --- | --- |
-| `npm test` | SFTP client + `SshVault` against a throwaway sshd |
-| `npm run test:relay` | the Worker's WebSocket↔TCP relay, both directions |
-| `npm run test:layout` | touch resizing and the phone drawer, in real Chromium |
+| `npm test` | the SFTP client and vault operations against a throwaway sshd |
+| `npm run test:relay` | the Worker's WebSocket↔TCP relay, in both directions |
+| `npm run test:layout` | touch resizing, the phone drawer and note naming, in real Chromium |
 
 `test:layout` needs a build plus `npm i --no-save playwright-core
-@playwright/browser-chromium`. It serves `dist/` with its own relay and sshd, so
-the browser connects over SSH exactly as it does in production. Set
-`SHOTS=<dir>` to also write phone and tablet screenshots.
+@playwright/browser-chromium`. It stands up its own sshd, relay and static
+server, so the browser connects over SSH exactly as it does in production. Set
+`SHOTS=<dir>` to write phone and tablet screenshots as it goes.
 
+## Deploying your own
 
-## Remote vault over SSH
+```
+npm run build
+npx wrangler deploy
+```
 
-Open a vault that lives on any server you can already SSH into — nothing to
-install there, just sshd with its usual SFTP subsystem. On the welcome screen
-pick **Connect over SSH** and give it host, username, password (or a private key
-file) and the vault path. The vault name in the sidebar switches vaults.
+Change `name` in `wrangler.jsonc` first, and either drop the `routes` block to
+use the generated `workers.dev` URL or point it at a domain in your own
+Cloudflare account.
 
-How it works: the browser speaks SSH end-to-end using a JavaScript SSH client;
-the app's Worker exposes `/relay`, a WebSocket-to-TCP pipe to port 22, because
-browsers can't open TCP sockets. Credentials and file contents are encrypted
-before they leave the page — the relay only ever sees ciphertext.
+## Credits
 
-Notes:
-- Host keys are pinned on first connect (trust-on-first-use). A changed key
-  aborts the connection with a warning rather than reconnecting silently.
-- The password or key is only stored in the browser if you tick "Remember on
-  this device"; otherwise you re-enter it each session.
-- Key files must be RSA or ECDSA (PEM or PKCS#8) — the browser SSH client does
-  not implement ed25519.
-- `npm test` runs the SFTP/vault self-check against a throwaway sshd, using the
-  same WebCrypto code path browsers take.
+Inspired by [writer-computer](https://github.com/joelbqz/writer-computer).

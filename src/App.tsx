@@ -46,7 +46,7 @@ export default function App() {
 
   useEffect(() => {
     const name = activePath?.split('/').pop()?.replace(/\.md$/, '')
-    document.title = name ? `${name} — mdd` : 'mdd'
+    document.title = name ? `${name} — edit.computer` : 'edit.computer'
   }, [activePath])
 
   if (!vault) return <Welcome />
@@ -108,7 +108,7 @@ function Welcome() {
 
   return (
     <div className="welcome">
-      <h1>mdd</h1>
+      <h1>edit.computer</h1>
       <p className="tagline">A fast markdown editor for your vault — local folder or SSH.</p>
       {showForm ? (
         <Connect onCancel={() => setShowForm(false)} />

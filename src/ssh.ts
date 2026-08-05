@@ -64,13 +64,13 @@ export function unusableKeyReason(pem: string): string | null {
   if (decoded.includes('ssh-ed25519')) {
     return (
       'This is an ed25519 key, which this browser SSH client cannot use. Create an RSA key ' +
-      '(ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/mdd_key) and append mdd_key.pub to ' +
+      '(ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/edit_key) and append edit_key.pub to ' +
       '~/.ssh/authorized_keys on the server.'
     )
   }
   return (
     'This key is in OpenSSH format, which this browser SSH client cannot read. Convert a copy: ' +
-    'cp ~/.ssh/id_rsa ~/mdd_key && ssh-keygen -p -m PEM -f ~/mdd_key — then pick ~/mdd_key here.'
+    'cp ~/.ssh/id_rsa ~/edit_key && ssh-keygen -p -m PEM -f ~/edit_key — then pick ~/edit_key here.'
   )
 }
 
