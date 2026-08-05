@@ -63,7 +63,13 @@ const sshd = spawn('/usr/sbin/sshd', ['-D', '-f', path.join(dir, 'sshd_config')]
 
 // --- static server + relay ---
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
+const TYPES = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+}
 const server = http.createServer(async (req, res) => {
   const name = new URL(req.url, 'http://x').pathname
   const file = path.join(dist, name === '/' ? 'index.html' : name)
@@ -135,6 +141,16 @@ async function connect(page) {
 const width = (sel) => (page) => page.$eval(sel, (el) => el.getBoundingClientRect().width)
 
 try {
+  // A share card that 404s is invisible until someone posts the link, so check
+  // the tag and the file it points at agree.
+  const html = await (await fetch(origin)).text()
+  const og = /<meta property="og:image" content="https:\/\/edit\.computer(\/[^"]+)"/.exec(html)
+  assert.ok(og, 'og:image tag present with an absolute URL')
+  const card = await fetch(`${origin}${og[1]}`)
+  assert.equal(card.status, 200, `${og[1]} is served`)
+  assert.equal(card.headers.get('content-type'), 'image/png')
+  assert.ok((await card.arrayBuffer()).byteLength > 10_000, 'card is a real image')
+
   // === iPad: landscape, touch, desktop layout with both resizers ===
   const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true })
   const pad = await tablet.newPage()

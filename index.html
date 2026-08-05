@@ -2,9 +2,42 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>edit.computer</title>
+
+    <!-- The app rewrites document.title to the open note; this is what crawlers see. -->
+    <title>edit.computer — a markdown editor for your own files</title>
+    <meta
+      name="description"
+      content="A markdown editor that runs in your browser and writes straight to your own files — a local folder, or any server you can SSH into. No account, no upload, open source."
+    />
+    <link rel="canonical" href="https://edit.computer/" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b1b1d" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="edit.computer" />
+    <meta property="og:url" content="https://edit.computer/" />
+    <meta property="og:title" content="edit.computer" />
+    <meta
+      property="og:description"
+      content="A markdown editor that runs in your browser and writes straight to your own files — a local folder, or any server you can SSH into. No account, no upload, open source."
+    />
+    <meta property="og:image" content="https://edit.computer/og.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="edit.computer open on a laptop showing its welcome screen, and on a tablet showing a note being edited alongside the file tree and outline."
+    />
+
+    <!-- title, description and image fall back to the og: tags above -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@vladzima" />
+    <meta name="twitter:creator" content="@vladzima" />
   </head>
   <body>
     <div id="root"></div>
