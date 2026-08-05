@@ -5,6 +5,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { tags as t } from '@lezer/highlight'
+import { isTouch } from './layout'
 import { livePreview } from './livePreview'
 import { useStore } from './store'
 import { setEditorView } from './viewRef'
@@ -97,7 +98,7 @@ export function Editor() {
     viewRef.current = view
     setEditorView(view)
     // Focusing raises the on-screen keyboard, so on touch wait for a real tap.
-    if (!matchMedia('(any-pointer: coarse)').matches) view.focus()
+    if (!isTouch()) view.focus()
 
     // track which heading section the viewport is in, for the outline highlight
     let raf = 0

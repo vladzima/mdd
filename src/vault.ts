@@ -228,6 +228,11 @@ export async function renameVia(v: Vault, path: string, newName: string): Promis
   const i = path.lastIndexOf('/')
   const newPath = i === -1 ? name : `${path.slice(0, i)}/${name}`
   if (newPath === path) return path
+  // Never overwrite: without a native rename this is read + write + delete, which
+  // would destroy whatever already sits at newPath.
+  if (await v.mtime(newPath).then(() => true, () => false)) {
+    throw new Error(`“${name}” already exists here`)
+  }
   if (v.rename) {
     await v.rename(path, newPath)
     return newPath

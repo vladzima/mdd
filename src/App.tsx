@@ -49,14 +49,6 @@ export default function App() {
     document.title = name ? `${name} — mdd` : 'mdd'
   }, [activePath])
 
-  // On a narrow screen the sidebar is an overlay covering the note, so opening
-  // one should dismiss it. Same breakpoint as the drawer rules in index.css.
-  useEffect(() => {
-    if (activePath && matchMedia('(max-width: 700px)').matches && useStore.getState().sidebarOpen) {
-      useStore.getState().toggleSidebar()
-    }
-  }, [activePath])
-
   if (!vault) return <Welcome />
 
   return (

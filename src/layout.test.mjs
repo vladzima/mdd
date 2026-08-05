@@ -219,13 +219,31 @@ try {
     'editor padding tightened for the phone',
   )
 
+  // rename on a phone goes through the platform dialog, not the inline field
+  // that the on-screen keyboard would cover
+  await ph.tap('.sidebar-toggle')
+  await ph.waitForSelector('.sidebar')
+  let asked = null
+  ph.once('dialog', (d) => {
+    asked = { type: d.type(), value: d.defaultValue() }
+    return d.accept('Renamed on phone')
+  })
+  await ph.tap('.row.file:has-text("Root") [title="Rename"]')
+  // the drawer must survive the rename — it closes on opening a note, not on
+  // any change of the active path
+  await ph.waitForSelector('.row.file:has-text("Renamed on phone")')
+  assert.equal(asked?.type, 'prompt', 'a prompt dialog was used')
+  assert.equal(asked.value, 'Root', 'prefilled with the current name')
+  assert.equal(await ph.$$eval('.rename-input', (e) => e.length), 0, 'no inline field on a phone')
+  await fs.access(path.join(vault, 'Renamed on phone.md'))
+
   // === desktop: hover is the only thing that hides row actions, so this is
   // where a note you just made can end up with no visible way to rename it ===
   const desk = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   const dk = await desk.newPage()
   await connect(dk)
   await dk.click('.sidebar-header .icon-btn[title="New note"]')
-  await dk.waitForSelector('.row.file.active')
+  await dk.waitForSelector('.row.file.active:has-text("Untitled")')
 
   const active = await dk.$$('.row.file.active')
   assert.equal(active.length, 2, 'the new note is listed under Recent and in the tree')
@@ -248,6 +266,33 @@ try {
   await field.press('Enter')
   await dk.waitForSelector('.row.file:has-text("Renamed by test")')
   await fs.access(path.join(vault, 'Renamed by test.md'))
+
+  // a new note names itself from its first H1, once that line is finished
+  const names = () => dk.$$eval('.row-name', (els) => els.map((e) => e.textContent))
+  await dk.click('.sidebar-header .icon-btn[title="New note"]')
+  await dk.waitForSelector('.row.file.active:has-text("Untitled")')
+  await dk.keyboard.type('# Kitchen notes')
+  await dk.waitForTimeout(1200) // autosave is 800ms idle
+  assert.ok(
+    (await names()).includes('Untitled'),
+    'still Untitled while the cursor sits on the title line',
+  )
+  await dk.keyboard.type('\nbody')
+  await dk.waitForSelector('.row.file:has-text("Kitchen notes")')
+  await fs.access(path.join(vault, 'Kitchen notes.md'))
+  assert.ok(!(await names()).includes('Untitled'), 'the placeholder name is gone')
+
+  // a second note with the same heading must not overwrite the first
+  await dk.click('.sidebar-header .icon-btn[title="New note"]')
+  await dk.waitForSelector('.row.file.active:has-text("Untitled")')
+  await dk.keyboard.type('# Kitchen notes\nsomething else')
+  await dk.waitForTimeout(1500)
+  assert.ok((await names()).includes('Untitled'), 'a taken name leaves the note as Untitled')
+  assert.equal(
+    await fs.readFile(path.join(vault, 'Kitchen notes.md'), 'utf8'),
+    '# Kitchen notes\nbody',
+    'the original note was not clobbered',
+  )
 
   if (process.env.SHOTS) {
     await ph.screenshot({ path: `${process.env.SHOTS}/phone-note.png` })

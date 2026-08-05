@@ -12,6 +12,7 @@ Requires a Chromium browser (Chrome, Edge, Arc, Brave); Firefox and Safari don't
 - Rendered tables, inline images (`![](path)` and `![[embed]]`), clickable checkboxes, horizontal rules
 - Wikilinks `[[Note]]` / `[[Note|alias]]` — click to navigate, creates the note if missing
 - Outline panel with click-to-jump and scroll position tracking
+- New notes name themselves from their first `# heading` once you move off the title line; a name you set yourself is never overwritten, and an existing file is never replaced
 - Autosave (800 ms idle) plus ⌘S; picks up external edits (Obsidian, sync) on window focus
 - Word count, dark mode, ⌘\ toggles the sidebar, restores your last-open note
 
@@ -23,8 +24,9 @@ unreachable without a mouse).
 
 Under 700px the layout switches: the file tree becomes an overlay drawer that
 closes when you pick a note or tap outside it, the outline panel drops out, and
-the editor takes the full width. The editor does not steal focus on touch, so
-the on-screen keyboard only appears when you tap into the text.
+the editor takes the full width. Renaming uses the platform's own dialog rather
+than the inline field, which the on-screen keyboard would cover. The editor does
+not steal focus on touch, so the keyboard only appears when you tap into the text.
 
 A phone can't open a local folder — no mobile browser implements
 `showDirectoryPicker()` — so use **Connect over SSH** there.

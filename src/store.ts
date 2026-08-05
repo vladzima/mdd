@@ -8,6 +8,7 @@ import {
   type TreeNode,
   type Vault,
 } from './vault'
+import { isNarrow } from './layout'
 import { saveSsh, savedSsh, type SshConfig } from './sshConfig'
 
 const LAST_FILE = 'mdd:last-file'
@@ -70,6 +71,25 @@ export function extractOutline(text: string): OutlineItem[] {
     }
   }
   return items
+}
+
+// A new note is born "Untitled" and renames itself once its first H1 is written.
+// Only files still carrying the placeholder are touched, so a name you chose is
+// never overwritten, and the rename waits until the heading line is finished —
+// otherwise every pause while typing a title would rename the file again.
+const PLACEHOLDER = /^Untitled( \d+)?\.md$/
+
+export function autoName(text: string): string | null {
+  const h = extractOutline(text).find((x) => x.level === 1)
+  if (!h || text.split('\n').length <= h.line) return null // still on the title line
+  const name = h.text
+    .replace(/[/\\:<>"|?*]/g, '') // illegal in a filename on some host
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+/, '') // a leading dot would hide the file
+    .trim()
+    .slice(0, 80)
+    .trim()
+  return name || null
 }
 
 function storedStrings(key: string): string[] {
@@ -258,6 +278,11 @@ export const useStore = create<Store>()((set, get) => {
         outline: extractOutline(text),
         outlineActive: null,
       })
+      // On a phone the sidebar is an overlay covering the note it just opened.
+      // Deliberately tied to opening a file rather than to activePath changing,
+      // so renaming the open note doesn't yank the drawer shut. Not persisted:
+      // it's a consequence of navigating, not a preference.
+      if (isNarrow() && get().sidebarOpen) set({ sidebarOpen: false })
     },
 
     onEdit: (text) => {
@@ -276,6 +301,13 @@ export const useStore = create<Store>()((set, get) => {
       clearTimeout(saveTimer)
       lastMtime = await vault.write(activePath, liveText)
       set({ dirty: false, wordCount: countWords(liveText) })
+
+      const base = activePath.split('/').pop()!
+      const titled = PLACEHOLDER.test(base) ? autoName(liveText) : null
+      if (titled && `${titled}.md` !== base) {
+        // a taken name throws out of renameVia; the note simply stays Untitled
+        await get().renameFile(activePath, titled).catch(() => {})
+      }
     },
 
     createFile: async (dirPath = '') => {

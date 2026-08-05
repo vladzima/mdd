@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { isNarrow } from './layout'
 import { startResize } from './resize'
 import { useStore } from './store'
 import type { TreeNode } from './vault'
@@ -119,6 +120,19 @@ function FileRow({ path, name, indent }: { path: string; name: string; indent: n
   const [renaming, setRenaming] = useState(false)
   const style = { paddingLeft: `${indent}px` }
 
+  const rename = (next: string) => {
+    if (next && next !== name) {
+      void renameFile(path, next).catch((err: unknown) => alert(String((err as Error).message)))
+    }
+  }
+
+  // In the drawer the inline field sits under the on-screen keyboard, so a phone
+  // gets the platform's own dialog instead.
+  const startRename = () => {
+    if (isNarrow()) rename(prompt('Rename note', name)?.trim() ?? '')
+    else setRenaming(true)
+  }
+
   if (renaming) {
     return (
       <div className="row" style={style}>
@@ -137,7 +151,7 @@ function FileRow({ path, name, indent }: { path: string; name: string; indent: n
           onBlur={(e) => {
             const next = e.currentTarget.value.trim()
             setRenaming(false)
-            if (next && next !== name) void renameFile(path, next)
+            rename(next)
           }}
         />
       </div>
@@ -156,7 +170,7 @@ function FileRow({ path, name, indent }: { path: string; name: string; indent: n
         title="Rename"
         onClick={(e) => {
           e.stopPropagation()
-          setRenaming(true)
+          startRename()
         }}
       >
         ✎
