@@ -7,8 +7,6 @@ export function Sidebar() {
   const vaultName = useStore((s) => s.vaultName)
   const tree = useStore((s) => s.tree)
   const recents = useStore((s) => s.recents)
-  const activePath = useStore((s) => s.activePath)
-  const openFile = useStore((s) => s.openFile)
   const createFile = useStore((s) => s.createFile)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const sidebarWidth = useStore((s) => s.sidebarWidth)
@@ -56,14 +54,12 @@ export function Sidebar() {
           <>
             <div className="section-label">Recent</div>
             {recentShown.map((path) => (
-              <div
+              <FileRow
                 key={path}
-                className={`row file${activePath === path ? ' active' : ''}`}
-                style={{ paddingLeft: '10px' }}
-                onClick={() => void openFile(path)}
-              >
-                <span className="row-name">{path.split('/').pop()!.replace(/\.md$/, '')}</span>
-              </div>
+                path={path}
+                name={path.split('/').pop()!.replace(/\.md$/, '')}
+                indent={10}
+              />
             ))}
             <div className="section-label">Notes</div>
           </>
@@ -81,14 +77,9 @@ export function Sidebar() {
 }
 
 function Node({ node, depth }: { node: TreeNode; depth: number }) {
-  const activePath = useStore((s) => s.activePath)
-  const openFile = useStore((s) => s.openFile)
   const createFile = useStore((s) => s.createFile)
-  const deleteFile = useStore((s) => s.deleteFile)
-  const renameFile = useStore((s) => s.renameFile)
   const collapsed = useStore((s) => s.collapsedDirs.has(node.path))
   const toggleDir = useStore((s) => s.toggleDir)
-  const [renaming, setRenaming] = useState(false)
 
   const indent = { paddingLeft: `${10 + depth * 14}px` }
 
@@ -115,25 +106,38 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
     )
   }
 
+  return <FileRow path={node.path} name={node.name} indent={10 + depth * 14} />
+}
+
+// Shared by the tree and the Recent list — Recent used to render a bare name,
+// which left a freshly created note with no way to rename it.
+function FileRow({ path, name, indent }: { path: string; name: string; indent: number }) {
+  const activePath = useStore((s) => s.activePath)
+  const openFile = useStore((s) => s.openFile)
+  const deleteFile = useStore((s) => s.deleteFile)
+  const renameFile = useStore((s) => s.renameFile)
+  const [renaming, setRenaming] = useState(false)
+  const style = { paddingLeft: `${indent}px` }
+
   if (renaming) {
     return (
-      <div className="row" style={indent}>
+      <div className="row" style={style}>
         <input
           className="rename-input"
-          defaultValue={node.name}
+          defaultValue={name}
           autoFocus
           onFocus={(e) => e.currentTarget.select()}
           onKeyDown={(e) => {
             if (e.key === 'Enter') e.currentTarget.blur()
             if (e.key === 'Escape') {
-              e.currentTarget.value = node.name
+              e.currentTarget.value = name
               e.currentTarget.blur()
             }
           }}
           onBlur={(e) => {
-            const name = e.currentTarget.value.trim()
+            const next = e.currentTarget.value.trim()
             setRenaming(false)
-            if (name && name !== node.name) void renameFile(node.path, name)
+            if (next && next !== name) void renameFile(path, next)
           }}
         />
       </div>
@@ -142,11 +146,11 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
 
   return (
     <div
-      className={`row file${activePath === node.path ? ' active' : ''}`}
-      style={indent}
-      onClick={() => void openFile(node.path)}
+      className={`row file${activePath === path ? ' active' : ''}`}
+      style={style}
+      onClick={() => void openFile(path)}
     >
-      <span className="row-name">{node.name}</span>
+      <span className="row-name">{name}</span>
       <button
         className="icon-btn row-action"
         title="Rename"
@@ -162,7 +166,7 @@ function Node({ node, depth }: { node: TreeNode; depth: number }) {
         title="Delete"
         onClick={(e) => {
           e.stopPropagation()
-          if (confirm(`Delete "${node.name}"?`)) void deleteFile(node.path)
+          if (confirm(`Delete "${name}"?`)) void deleteFile(path)
         }}
       >
         ×

@@ -97,7 +97,7 @@ export function Editor() {
     viewRef.current = view
     setEditorView(view)
     // Focusing raises the on-screen keyboard, so on touch wait for a real tap.
-    if (!matchMedia('(pointer: coarse)').matches) view.focus()
+    if (!matchMedia('(any-pointer: coarse)').matches) view.focus()
 
     // track which heading section the viewport is in, for the outline highlight
     let raf = 0

@@ -219,6 +219,36 @@ try {
     'editor padding tightened for the phone',
   )
 
+  // === desktop: hover is the only thing that hides row actions, so this is
+  // where a note you just made can end up with no visible way to rename it ===
+  const desk = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const dk = await desk.newPage()
+  await connect(dk)
+  await dk.click('.sidebar-header .icon-btn[title="New note"]')
+  await dk.waitForSelector('.row.file.active')
+
+  const active = await dk.$$('.row.file.active')
+  assert.equal(active.length, 2, 'the new note is listed under Recent and in the tree')
+  for (const row of active) {
+    const rename = await row.$('[title="Rename"]')
+    assert.ok(rename, 'every listing of a note offers rename')
+    assert.ok(await rename.isVisible(), 'the open note shows its actions without a hover')
+  }
+  const idle = await dk.$('.row.file:not(.active)')
+  assert.equal(
+    await (await idle.$('[title="Rename"]')).isVisible(),
+    false,
+    'notes you are not editing stay quiet until hovered',
+  )
+
+  // rename through the Recent copy, which used to render a bare name
+  await (await active[0].$('[title="Rename"]')).click()
+  const field = await dk.waitForSelector('.rename-input')
+  await field.fill('Renamed by test')
+  await field.press('Enter')
+  await dk.waitForSelector('.row.file:has-text("Renamed by test")')
+  await fs.access(path.join(vault, 'Renamed by test.md'))
+
   if (process.env.SHOTS) {
     await ph.screenshot({ path: `${process.env.SHOTS}/phone-note.png` })
     await ph.tap('.sidebar-toggle')

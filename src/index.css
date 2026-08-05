@@ -232,7 +232,10 @@ button {
   visibility: hidden;
 }
 
-.row:hover .row-action {
+/* the open note is the one you are most likely to rename, so never make its
+   controls depend on finding them by hover */
+.row:hover .row-action,
+.row.active .row-action {
   visibility: visible;
 }
 
@@ -624,8 +627,10 @@ img.cm-image-broken {
 /* --- touch --- */
 
 /* Nothing hovers on a touch screen, so hover-revealed controls are unreachable
-   and an invisible drag handle is undiscoverable. */
-@media (hover: none) {
+   and an invisible drag handle is undiscoverable. `any-pointer` rather than
+   `pointer`/`hover`: attaching a mouse to an iPad flips those to fine/hover and
+   would take the touch affordances away while the screen is still a screen. */
+@media (hover: none), (any-pointer: coarse) {
   .row-action {
     visibility: visible;
   }
@@ -644,7 +649,7 @@ img.cm-image-broken {
   }
 }
 
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   /* a fingertip is ~9mm; 6px of grab strip is not enough */
   .resizer {
     width: 22px;
