@@ -8,6 +8,9 @@ import { Outline } from './Outline'
 import { Settings } from './Settings'
 import { Sidebar } from './Sidebar'
 
+// Keep in step with <title> and og:title in index.html.
+const SITE_TITLE = 'edit.computer — markdown editor for your own files, local or SSH'
+
 export default function App() {
   const vault = useStore((s) => s.vault)
   const activePath = useStore((s) => s.activePath)
@@ -46,7 +49,9 @@ export default function App() {
 
   useEffect(() => {
     const name = activePath?.split('/').pop()?.replace(/\.md$/, '')
-    document.title = name ? `${name} — edit.computer` : 'edit.computer'
+    // Short while editing, so the tab reads as the note; descriptive on the
+    // landing page, which is the one that gets shared and indexed.
+    document.title = name ? `${name} — edit.computer` : SITE_TITLE
   }, [activePath])
 
   if (!vault) return <Welcome />

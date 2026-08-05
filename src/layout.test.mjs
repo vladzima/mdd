@@ -151,6 +151,22 @@ try {
   assert.equal(card.headers.get('content-type'), 'image/png')
   assert.ok((await card.arrayBuffer()).byteLength > 10_000, 'card is a real image')
 
+  // A bare "edit.computer" says nothing in a search result or a shared link.
+  const descriptive = (what, s) => {
+    assert.ok(s, `${what} present`)
+    assert.ok(s.includes('edit.computer'), `${what} carries the name (got "${s}")`)
+    assert.ok(s.length > 30, `${what} says what the app is (got "${s}")`)
+  }
+  descriptive('<title>', /<title>([^<]+)<\/title>/.exec(html)?.[1])
+  descriptive('og:title', /<meta\s+property="og:title"\s+content="([^"]+)"/s.exec(html)?.[1])
+
+  // ...and the app must not overwrite it with the short form on the landing page
+  const intro = await browser.newContext({ viewport: { width: 1024, height: 640 } })
+  const w = await intro.newPage()
+  await w.goto(origin)
+  await w.waitForSelector('.welcome-foot')
+  descriptive('runtime landing title', await w.title())
+
   // === iPad: landscape, touch, desktop layout with both resizers ===
   const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true })
   const pad = await tablet.newPage()
@@ -323,10 +339,6 @@ try {
     await shot(ph, 'phone-drawer')
     await shot(pad, 'tablet')
 
-    const fresh = await browser.newContext({ viewport: { width: 1024, height: 640 } })
-    const w = await fresh.newPage()
-    await w.goto(origin)
-    await w.waitForSelector('.welcome-foot')
     await shot(w, 'welcome')
   }
 
