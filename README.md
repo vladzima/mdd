@@ -5,6 +5,8 @@ own files — a local folder, or a directory on any server you can SSH into.
 
 **[edit.computer](https://edit.computer)** — no account, no install, no upload.
 
+[![edit.computer open on a laptop showing its welcome screen, and on a tablet showing a note being edited alongside the file tree and outline](public/og.png)](https://edit.computer)
+
 It reads and writes plain `.md` files in place, so an Obsidian vault, a Jekyll
 `_posts` directory, or a folder of notes all work as-is. Nothing is copied to a
 server owned by this project: with a local folder the files never leave your
