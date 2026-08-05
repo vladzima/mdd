@@ -295,11 +295,23 @@ try {
   )
 
   if (process.env.SHOTS) {
-    await ph.screenshot({ path: `${process.env.SHOTS}/phone-note.png` })
+    const shot = (page, name) => page.screenshot({ path: `${process.env.SHOTS}/${name}.png` })
+    // the phone rename test leaves the drawer open
+    if (await ph.isVisible('.scrim')) {
+      await ph.tap('.scrim', { position: { x: 360, y: 500 } })
+      await ph.waitForSelector('.sidebar', { state: 'detached' })
+    }
+    await shot(ph, 'phone-note')
     await ph.tap('.sidebar-toggle')
     await ph.waitForSelector('.sidebar')
-    await ph.screenshot({ path: `${process.env.SHOTS}/phone-drawer.png` })
-    await pad.screenshot({ path: `${process.env.SHOTS}/tablet.png` })
+    await shot(ph, 'phone-drawer')
+    await shot(pad, 'tablet')
+
+    const fresh = await browser.newContext({ viewport: { width: 1024, height: 640 } })
+    const w = await fresh.newPage()
+    await w.goto(origin)
+    await w.waitForSelector('.welcome-foot')
+    await shot(w, 'welcome')
   }
 
   console.log('layout self-check OK (touch resize + phone drawer)')

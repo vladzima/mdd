@@ -138,9 +138,21 @@ function Welcome() {
           everywhere.
         </p>
       )}
-      <p className="hint">
-        Files stay on your disk or your server — nothing is stored by this app.
-      </p>
+      <div className="welcome-foot">
+        <p>
+          Files stay on your disk or your server — nothing is stored by this app, and it’s{' '}
+          <a href="https://github.com/vladzima/mdd" target="_blank" rel="noreferrer">
+            open source
+          </a>
+          .
+        </p>
+        <p>
+          Made by{' '}
+          <a href="https://x.com/vladzima" target="_blank" rel="noreferrer">
+            Vlad Arbatov
+          </a>
+        </p>
+      </div>
     </div>
   )
 }
