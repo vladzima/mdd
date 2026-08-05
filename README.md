@@ -108,6 +108,10 @@ Change `name` in `wrangler.jsonc` first, and either drop the `routes` block to
 use the generated `workers.dev` URL or point it at a domain in your own
 Cloudflare account.
 
+## License
+
+[MIT](LICENSE) © Vlad Arbatov.
+
 ## Credits
 
 Inspired by [writer-computer](https://github.com/joelbqz/writer-computer).
