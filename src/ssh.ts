@@ -16,7 +16,7 @@ import {
 import { importKeyBytes } from '@microsoft/dev-tunnels-ssh-keys'
 import { Sftp } from './sftp'
 import { hostKeyStore, pinHostKey, type SshConfig } from './sshConfig'
-import type { TreeNode, Vault, VaultScan } from './vault'
+import { byName, type TreeNode, type Vault, type VaultScan } from './vault'
 
 // --- host key TOFU: pin on first connect, refuse silent changes ---
 
@@ -229,20 +229,17 @@ export class SshVault implements Vault {
       const path = prefix ? `${prefix}/${entry.name}` : entry.name
       if (entry.isDir) {
         const children = await this.walkDir(path, mdIndex, assetIndex)
-        if (children.length > 0) {
-          nodes.push({ name: entry.name, path, kind: 'dir', children })
-        }
+        // listed even when empty — see the note in vault.ts walk()
+        nodes.push({ name: entry.name, path, kind: 'dir', mtime: entry.mtime, children })
       } else if (entry.name.endsWith('.md')) {
         const key = entry.name.slice(0, -3).toLowerCase()
         if (!mdIndex.has(key)) mdIndex.set(key, path)
-        nodes.push({ name: entry.name.slice(0, -3), path, kind: 'file' })
+        nodes.push({ name: entry.name.slice(0, -3), path, kind: 'file', mtime: entry.mtime })
       } else if (entry.isFile && !assetIndex.has(entry.name.toLowerCase())) {
         assetIndex.set(entry.name.toLowerCase(), path)
       }
     }
-    nodes.sort((a, b) =>
-      a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1,
-    )
+    nodes.sort(byName)
     return nodes
   }
 
@@ -278,8 +275,20 @@ export class SshVault implements Vault {
     await this.sftp.remove(this.abs(path))
   }
 
-  async rename(path: string, newPath: string): Promise<void> {
+  async move(path: string, newPath: string): Promise<void> {
     await this.sftp.rename(this.abs(path), this.abs(newPath))
+  }
+
+  async exists(path: string): Promise<boolean> {
+    return this.sftp.exists(this.abs(path))
+  }
+
+  async mkdir(path: string): Promise<void> {
+    await this.sftp.mkdir(this.abs(path))
+  }
+
+  async rmdir(path: string): Promise<void> {
+    await this.sftp.rmdir(this.abs(path))
   }
 
   async assetFile(path: string): Promise<Blob> {

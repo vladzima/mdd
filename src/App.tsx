@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
+import SidebarLeft from 'reicon-react/icons/SidebarLeft'
 import { useStore } from './store'
 import { Connect } from './Connect'
+import { DialogHost } from './Dialog'
+import { useNarrow } from './layout'
+import { useLingering } from './motion'
 import { savedSsh } from './sshConfig'
 import { supported } from './vault'
 import { Editor } from './Editor'
@@ -18,6 +22,13 @@ export default function App() {
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const settingsOpen = useStore((s) => s.settingsOpen)
   const theme = useStore((s) => s.theme)
+  const narrow = useNarrow()
+
+  // The drawer slides out; the desktop column does not linger at all, because it
+  // is toggled with ⌘\ and the editor beside it must reclaim the width at once.
+  const [held, sliding] = useLingering(sidebarOpen || null, 200)
+  const leaving = narrow && sliding
+  const showSidebar = sidebarOpen || (narrow && held !== null)
 
   useEffect(() => {
     if (theme === 'system') delete document.documentElement.dataset.theme
@@ -54,16 +65,24 @@ export default function App() {
     document.title = name ? `${name} — edit.computer` : SITE_TITLE
   }, [activePath])
 
-  if (!vault) return <Welcome />
+  if (!vault) {
+    return (
+      <>
+        <Welcome />
+        <DialogHost />
+      </>
+    )
+  }
 
   return (
     <div className="app">
+      <DialogHost />
       {settingsOpen && <Settings />}
-      {sidebarOpen && (
+      {showSidebar && (
         <>
-          <Sidebar />
+          <Sidebar closing={leaving} />
           {/* only visible at the drawer breakpoint; tap-outside to close */}
-          <div className="scrim" onClick={toggleSidebar} />
+          <div className={`scrim${leaving ? ' is-closing' : ''}`} onClick={toggleSidebar} />
         </>
       )}
       <main className="main">
@@ -73,13 +92,13 @@ export default function App() {
             title="Show sidebar (⌘\)"
             onClick={toggleSidebar}
           >
-            ⟩
+            <SidebarLeft size={18} />
           </button>
         )}
         {activePath ? (
           <Editor />
         ) : (
-          <div className="empty-state">Select a note, or create one with +</div>
+          <div className="empty-state">Select a note, or make one from the sidebar</div>
         )}
         <StatusBar />
       </main>

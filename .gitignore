@@ -26,3 +26,6 @@ dist-ssr
 .claude
 .wrangler
 .dev.vars
+
+# transitions.dev reference material, kept locally for design work — not app code
+transitions/

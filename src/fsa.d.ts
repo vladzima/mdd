@@ -13,6 +13,12 @@ interface FileSystemDirectoryHandle {
   values(): AsyncIterableIterator<FileSystemDirectoryHandle | FileSystemFileHandle>
 }
 
+interface FileSystemFileHandle {
+  // Chromium 111+. Optional here because the vault falls back to a byte copy
+  // when it is missing, and directory handles never got it at all.
+  move?(destination: FileSystemDirectoryHandle, name?: string): Promise<void>
+}
+
 interface Window {
   showDirectoryPicker(options?: {
     id?: string

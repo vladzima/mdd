@@ -9,6 +9,22 @@
   --accent: #4569d4;
   --selection: #d5e2fb;
   color-scheme: light dark;
+
+  /* Motion. Curves are taken rather than invented: the strong ease-out is
+     transitions.dev's, the drawer curve is Ionic's. The built-in CSS easings are
+     too weak to read as deliberate at these durations. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Exits are quicker than entrances everywhere: the user has already decided. */
+  --dur-press: 140ms;
+  --dur-quick: 120ms; /* hover, row actions — seen dozens of times a day */
+  --dur-menu: 180ms;
+  --dur-menu-out: 120ms;
+  --dur-modal: 220ms;
+  --dur-modal-out: 140ms;
+  --dur-drawer: 260ms;
+  --dur-drawer-out: 180ms;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -60,6 +76,56 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* One ring for the whole app, on :focus-visible so a mouse click never draws it.
+   --accent clears 3:1 against every surface in all four themes; currentColor
+   would not, since most of these controls sit at --muted. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Tree rows run the full width of the sidebar, so an offset ring would sit half
+   in the padding. Drawn inside instead. */
+.row:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Pressable things confirm the press. 0.97 is felt rather than seen, which is
+   the point — it makes the interface seem to be listening. */
+.btn,
+.icon-btn,
+.menu-item,
+.seg-btn,
+.vault-name {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+
+.btn:active,
+.icon-btn:active,
+.menu-item:active,
+.seg-btn:active,
+.vault-name:active {
+  transform: scale(0.97);
+}
+
+/* Fewer and gentler, not none: colour and opacity still carry meaning, only
+   movement goes. Scoped to this app's own classes so the editor is untouched. */
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .icon-btn,
+  .menu-item,
+  .seg-btn,
+  .vault-name,
+  .chevron,
+  .sidebar,
+  .dialog,
+  .menu,
+  .row-action {
+    transition-property: opacity, background-color, color !important;
+    transform: none !important;
+  }
 }
 
 html,
@@ -193,6 +259,7 @@ button {
   border-radius: 5px;
   cursor: pointer;
   color: var(--fg);
+  transition: background-color var(--dur-quick) ease;
 }
 
 .row:hover {
@@ -217,26 +284,151 @@ button {
 }
 
 .chevron {
-  display: inline-block;
-  width: 10px;
+  display: inline-flex;
   transform: rotate(90deg);
-  transition: transform 0.12s ease;
+  transition: transform var(--dur-menu) var(--ease-out);
   flex-shrink: 0;
+  opacity: 0.7;
 }
 
 .chevron.collapsed {
   transform: rotate(0deg);
 }
 
+/* --- drag to move and reorder --- */
+
+.row.is-dragging {
+  opacity: 0.4;
+}
+
+.sidebar.dragging {
+  cursor: grabbing;
+}
+
+/* The folder (or the vault root) the release would drop into. Deliberately not
+   transitioned: this tracks the pointer, and a target that fades in trails the
+   finger and reads as lag. */
+.drop-into {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 5px;
+}
+
+.tree.drop-into {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* where the row would land, in manual order */
+.drop-line {
+  height: 2px;
+  margin-right: 4px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+/* While a drag is live the pointer is somewhere over the tree, and a row lighting
+   up under it reads as a drop target it is not. */
+.sidebar.dragging .row:hover {
+  background: none;
+}
+
+.sidebar.dragging .row.active:hover {
+  background: var(--active);
+}
+
+/* --- sort menu --- */
+
+.sort-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 172px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+
+  /* Grows out of the button that opened it — the menu hangs below its right
+     edge, so that corner is where it comes from. Centre-origin is the wrong
+     default for anything anchored to a trigger. */
+  transform-origin: top right;
+  transition:
+    opacity var(--dur-menu) var(--ease-out),
+    transform var(--dur-menu) var(--ease-out);
+  will-change: opacity, transform;
+}
+
+@starting-style {
+  .menu {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* Held on screen by useLingering while this plays, then unmounted. */
+.menu.is-closing {
+  opacity: 0;
+  transform: scale(0.99);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-menu-out) var(--ease-out),
+    transform var(--dur-menu-out) var(--ease-out);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+}
+
+.menu-item:hover {
+  background: var(--hover);
+}
+
+.menu-item.selected {
+  color: var(--accent);
+}
+
+.menu-note {
+  padding: 6px 8px 3px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .row-action {
-  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(3px);
+  transition:
+    opacity var(--dur-quick) ease,
+    transform var(--dur-quick) var(--ease-out);
 }
 
 /* the open note is the one you are most likely to rename, so never make its
-   controls depend on finding them by hover */
+   controls depend on finding them by hover — and :focus-within brings them out
+   for anyone arriving by keyboard */
 .row:hover .row-action,
+.row:focus-within .row-action,
 .row.active .row-action {
-  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
 }
 
 .icon-btn {
@@ -309,6 +501,40 @@ button {
   gap: 12px;
   padding: 24px;
   text-align: center;
+}
+
+/* The one place a flourish is earned: this is seen once when the app opens, not
+   dozens of times a day, and it is the first thing anyone sees. Lines rise out of
+   a slight blur in sequence so the eye lands on the name before the buttons.
+   Values from transitions.dev's texts-reveal. */
+.welcome > * {
+  animation: rise 500ms var(--ease-out) backwards;
+}
+
+.welcome > :nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.welcome > :nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.welcome > :nth-child(4) {
+  animation-delay: 120ms;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome > * {
+    animation: none;
+  }
 }
 
 .welcome h1 {
@@ -453,7 +679,8 @@ button {
 
 /* --- settings --- */
 
-.settings-overlay {
+.settings-overlay,
+.dialog-overlay {
   position: fixed;
   inset: 0;
   background: rgb(0 0 0 / 35%);
@@ -461,6 +688,82 @@ button {
   align-items: center;
   justify-content: center;
   z-index: 100;
+}
+
+/* Above the settings panel and the phone drawer, both of which can be open when
+   something needs asking. */
+.dialog-overlay {
+  z-index: 200;
+  padding: 16px;
+
+  /* A 35% black scrim does almost nothing over the near-black themes. A little
+     blur separates the dialog from the note behind it in all four. */
+  backdrop-filter: blur(2px);
+  transition: opacity var(--dur-modal) var(--ease-out);
+}
+
+.dialog-overlay.is-closing {
+  opacity: 0;
+  transition: opacity var(--dur-modal-out) var(--ease-out);
+}
+
+.dialog {
+  width: min(380px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+
+  /* Centre origin, unlike the menu: a dialog is not anchored to anything, so
+     there is no corner for it to come from. Never scale(0) — nothing in the
+     real world appears out of nothing. */
+  transform-origin: center;
+  transition:
+    opacity var(--dur-modal) var(--ease-out),
+    transform var(--dur-modal) var(--ease-out);
+  will-change: opacity, transform;
+}
+
+@starting-style {
+  .dialog-overlay {
+    opacity: 0;
+  }
+
+  .dialog {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.dialog-overlay.is-closing .dialog {
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--dur-modal-out) var(--ease-out),
+    transform var(--dur-modal-out) var(--ease-out);
+}
+
+.dialog-message {
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere; /* an error can carry a long path */
+}
+
+.dialog .text-input {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.dialog-actions .btn {
+  padding: 7px 16px;
 }
 
 .settings-panel {
@@ -651,7 +954,9 @@ img.cm-image-broken {
    would take the touch affordances away while the screen is still a screen. */
 @media (hover: none), (any-pointer: coarse) {
   .row-action {
-    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
   }
 
   .resizer::after {
@@ -717,6 +1022,25 @@ img.cm-image-broken {
     width: min(310px, 84vw) !important; /* beats the inline drag width */
     z-index: 30;
     box-shadow: 0 0 40px rgb(0 0 0 / 30%);
+
+    /* Only the drawer moves. On a desktop this same element is a column toggled
+       with ⌘\ dozens of times a day, and a keyboard action that waits on an
+       animation feels broken — so the transition lives inside this breakpoint. */
+    transition: transform var(--dur-drawer) var(--ease-drawer);
+    will-change: transform;
+  }
+
+  @starting-style {
+    .sidebar {
+      transform: translateX(-100%);
+    }
+  }
+
+  /* Leaves the way it arrived, quicker — that symmetry is what makes the
+     swipe-shut gesture feel obvious. */
+  .sidebar.is-closing {
+    transform: translateX(-100%);
+    transition: transform var(--dur-drawer-out) var(--ease-drawer);
   }
 
   .resizer,
@@ -730,6 +1054,18 @@ img.cm-image-broken {
     inset: 0;
     z-index: 25;
     background: rgb(0 0 0 / 35%);
+    transition: opacity var(--dur-drawer) var(--ease-out);
+  }
+
+  @starting-style {
+    .scrim {
+      opacity: 0;
+    }
+  }
+
+  .scrim.is-closing {
+    opacity: 0;
+    transition: opacity var(--dur-drawer-out) var(--ease-out);
   }
 
   /* the only route back to the file list once the drawer closes — needs to look

@@ -14,6 +14,8 @@ const FXP = {
   OPENDIR: 11,
   READDIR: 12,
   REMOVE: 13,
+  MKDIR: 14,
+  RMDIR: 15,
   REALPATH: 16,
   STAT: 17,
   RENAME: 18,
@@ -323,6 +325,16 @@ export class Sftp {
 
   async rename(from: string, to: string): Promise<void> {
     await this.request(FXP.RENAME, Buffer.concat([str(from), str(to)]), `rename ${from}`)
+  }
+
+  async mkdir(path: string): Promise<void> {
+    // trailing u32(0) is an empty ATTRS block: let the server pick the mode
+    await this.request(FXP.MKDIR, Buffer.concat([str(path), u32(0)]), `mkdir ${path}`)
+  }
+
+  // Fails on a non-empty directory, which is the behaviour the folder UI relies on.
+  async rmdir(path: string): Promise<void> {
+    await this.request(FXP.RMDIR, str(path), `rmdir ${path}`)
   }
 
   async exists(path: string): Promise<boolean> {

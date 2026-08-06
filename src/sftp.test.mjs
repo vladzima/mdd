@@ -104,19 +104,22 @@ try {
   const root = await sftp.realpath(vault)
   const v = new SshVault(session, sftp, root, { host: 'localhost', port: PORT, username: 'x', path: vault })
 
-  // walk: tree shape, dotfiles skipped, empty dirs hidden, indexes built
+  // walk: tree shape, dotfiles skipped, empty dirs listed, indexes built
   const scan = await v.walk()
   assert.deepEqual(
     scan.tree.map((n) => `${n.kind}:${n.path}`),
-    ['dir:folder', 'file:Root.md'],
+    ['dir:empty', 'dir:folder', 'file:Root.md'],
     'tree',
   )
   assert.deepEqual(
-    scan.tree[0].children.map((n) => n.path),
+    scan.tree[1].children.map((n) => n.path),
     ['folder/Nested.md'],
   )
   assert.equal(scan.mdIndex.get('nested'), 'folder/Nested.md')
   assert.equal(scan.assetIndex.get('pic.png'), 'folder/pic.png')
+  // every node carries an mtime, or sorting by date edited has nothing to sort on
+  const rootNote = scan.tree.find((n) => n.path === 'Root.md')
+  assert.ok(Math.abs(rootNote.mtime - Date.now()) < 60_000, `Root.md mtime (got ${rootNote.mtime})`)
 
   // read
   const got = await v.read('folder/Nested.md')
@@ -143,8 +146,22 @@ try {
   assert.equal(await v.create('folder'), 'folder/Untitled.md')
 
   // native rename
-  await v.rename('big.md', 'renamed.md')
+  await v.move('big.md', 'renamed.md')
   assert.equal((await v.read('renamed.md')).text, big)
+
+  // folders: make, move a note into one, rename the folder, refuse to delete it
+  // while it still holds something, then delete it once it is empty
+  await v.mkdir('made')
+  assert.equal(await v.exists('made'), true, 'mkdir')
+  await v.move('renamed.md', 'made/renamed.md')
+  assert.equal((await v.read('made/renamed.md')).text, big, 'note moved into the folder')
+  assert.equal(await v.exists('renamed.md'), false, 'and left its old home')
+  await v.move('made', 'made2')
+  assert.equal((await v.read('made2/renamed.md')).text, big, 'folder rename takes its notes along')
+  await assert.rejects(() => v.rmdir('made2'), /failure|permission/i, 'rmdir refuses a full folder')
+  await v.delete('made2/renamed.md')
+  await v.rmdir('made2')
+  assert.equal(await v.exists('made2'), false, 'rmdir')
 
   // asset read as bytes
   const blob = await v.assetFile('folder/pic.png')

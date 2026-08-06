@@ -1,13 +1,20 @@
 import { create } from 'zustand'
 import {
+  baseOf,
+  dirOf,
+  join,
   LocalVault,
+  moveVia,
   pickVault,
-  renameVia,
+  renamedPath,
   requestVaultPermission,
   restoreVault,
   type TreeNode,
   type Vault,
 } from './vault'
+import { childrenOf, placeIn, remapOrder, sortTree, SORTS, type ManualOrder, type Sort } from './sort'
+import { dropAllowed, type DropAt } from './drag'
+import { tell } from './dialog'
 import { isNarrow } from './layout'
 import { saveSsh, savedSsh, type SshConfig } from './sshConfig'
 
@@ -20,6 +27,8 @@ const TAB_SIZE = 'mdd:tab-size'
 const THEME = 'mdd:theme'
 const OUTLINE_WIDTH = 'mdd:outline-width'
 const COLLAPSED = 'mdd:collapsed-dirs'
+const SORT = 'mdd:sort'
+const MANUAL_ORDER = 'mdd:manual-order'
 
 export const THEMES = ['system', 'light', 'dark', 'vesper'] as const
 export type Theme = (typeof THEMES)[number]
@@ -101,6 +110,25 @@ function storedStrings(key: string): string[] {
   }
 }
 
+function storedSort(): Sort {
+  const s = localStorage.getItem(SORT)
+  return (SORTS as readonly string[]).includes(s ?? '') ? (s as Sort) : 'name'
+}
+
+function storedOrder(): ManualOrder {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(MANUAL_ORDER) ?? '{}')
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+    const out: ManualOrder = {}
+    for (const [dir, paths] of Object.entries(v as Record<string, unknown>)) {
+      if (Array.isArray(paths)) out[dir] = paths.filter((p): p is string => typeof p === 'string')
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 interface Store {
   vault: Vault | null
   pendingVault: FileSystemDirectoryHandle | null // restored, awaiting permission gesture
@@ -121,6 +149,11 @@ interface Store {
   settingsOpen: boolean
   tabSize: number
   theme: Theme
+  sort: Sort
+  manualOrder: ManualOrder
+  renamingRow: string | null // id of the row showing its name field
+  drag: string | null // path being dragged
+  dropAt: DropAt | null // where it would land if released now
 
   init: () => Promise<void>
   openVault: () => Promise<void>
@@ -133,7 +166,15 @@ interface Store {
   saveNow: () => Promise<void>
   createFile: (dirPath?: string) => Promise<void>
   deleteFile: (path: string) => Promise<void>
-  renameFile: (path: string, newName: string) => Promise<void>
+  renameEntry: (path: string, newName: string, kind: 'file' | 'dir') => Promise<void>
+  createDir: (dirPath?: string) => Promise<void>
+  deleteDir: (path: string) => Promise<void>
+  setRenaming: (row: string | null) => void
+  setSort: (sort: Sort) => void
+  beginDrag: (path: string) => void
+  hoverDrag: (at: DropAt | null) => void
+  endDrag: () => void
+  applyDrop: (path: string, at: DropAt) => Promise<void>
   checkExternal: () => Promise<void>
   updateOutlineActive: (topLine: number) => void
   toggleSidebar: () => void
@@ -160,6 +201,48 @@ export const useStore = create<Store>()((set, get) => {
     set({ recents })
   }
 
+  function setManualOrder(manualOrder: ManualOrder) {
+    localStorage.setItem(MANUAL_ORDER, JSON.stringify(manualOrder))
+    set({ manualOrder })
+  }
+
+  // Renaming or moving a folder takes everything under it along, so each path the
+  // app is holding on to has to follow: the open note, the recents, which folders
+  // are collapsed, and the manual order. `to === null` means it was deleted.
+  function repath(from: string, to: string | null) {
+    const under = (p: string) => p === from || p.startsWith(`${from}/`)
+    const moved = (p: string) => (to === null ? null : to + p.slice(from.length))
+    const keep = (p: string | null): p is string => p !== null
+    const { activePath, recents, collapsedDirs, manualOrder } = get()
+
+    setRecents(recents.map((p) => (under(p) ? moved(p) : p)).filter(keep))
+    setManualOrder(remapOrder(manualOrder, from, to))
+
+    const collapsed = new Set(
+      [...collapsedDirs].map((p) => (under(p) ? moved(p) : p)).filter(keep),
+    )
+    localStorage.setItem(COLLAPSED, JSON.stringify([...collapsed]))
+    set({ collapsedDirs: collapsed })
+
+    if (!activePath || !under(activePath)) return
+    const next = moved(activePath)
+    if (next) {
+      localStorage.setItem(LAST_FILE, next)
+      set({ activePath: next })
+      return
+    }
+    liveText = null
+    localStorage.removeItem(LAST_FILE)
+    set({
+      activePath: null,
+      doc: '',
+      dirty: false,
+      wordCount: 0,
+      outline: [],
+      outlineActive: null,
+    })
+  }
+
   return {
     vault: null,
     pendingVault: null,
@@ -180,6 +263,11 @@ export const useStore = create<Store>()((set, get) => {
     settingsOpen: false,
     tabSize: localStorage.getItem(TAB_SIZE) === '4' ? 4 : 2,
     theme: storedTheme(),
+    sort: storedSort(),
+    manualOrder: storedOrder(),
+    renamingRow: null,
+    drag: null,
+    dropAt: null,
 
     init: async () => {
       const mode = localStorage.getItem(VAULT_MODE) ?? 'local'
@@ -305,8 +393,8 @@ export const useStore = create<Store>()((set, get) => {
       const base = activePath.split('/').pop()!
       const titled = PLACEHOLDER.test(base) ? autoName(liveText) : null
       if (titled && `${titled}.md` !== base) {
-        // a taken name throws out of renameVia; the note simply stays Untitled
-        await get().renameFile(activePath, titled).catch(() => {})
+        // a taken name throws out of moveVia; the note simply stays Untitled
+        await get().renameEntry(activePath, titled, 'file').catch(() => {})
       }
     },
 
@@ -314,41 +402,107 @@ export const useStore = create<Store>()((set, get) => {
       const { vault } = get()
       if (!vault) return
       const path = await vault.create(dirPath)
+      if (dirPath && get().collapsedDirs.has(dirPath)) get().toggleDir(dirPath)
       await get().refreshTree()
       await get().openFile(path)
     },
 
     deleteFile: async (path) => {
-      const { vault, activePath } = get()
+      const { vault } = get()
       if (!vault) return
       await vault.delete(path)
-      setRecents(get().recents.filter((p) => p !== path))
-      if (activePath === path) {
-        liveText = null
-        localStorage.removeItem(LAST_FILE)
-        set({
-          activePath: null,
-          doc: '',
-          dirty: false,
-          wordCount: 0,
-          outline: [],
-          outlineActive: null,
-        })
-      }
+      repath(path, null)
       await get().refreshTree()
     },
 
-    renameFile: async (path, newName) => {
-      const { vault, activePath } = get()
+    renameEntry: async (path, newName, kind) => {
+      const { vault } = get()
       if (!vault || !newName.trim()) return
-      if (activePath === path) await get().saveNow()
-      const newPath = await renameVia(vault, path, newName.trim())
-      setRecents(get().recents.map((p) => (p === path ? newPath : p)))
-      if (activePath === path) {
-        localStorage.setItem(LAST_FILE, newPath)
-        set({ activePath: newPath })
-      }
+      if (get().activePath === path) await get().saveNow()
+      const newPath = await moveVia(vault, path, renamedPath(path, newName.trim(), kind))
+      repath(path, newPath)
       await get().refreshTree()
+    },
+
+    createDir: async (dirPath = '') => {
+      const { vault } = get()
+      if (!vault) return
+      let path = ''
+      for (let n = 0; ; n++) {
+        path = join(dirPath, n === 0 ? 'New folder' : `New folder ${n}`)
+        if (!(await vault.exists(path))) break
+      }
+      await vault.mkdir(path)
+      if (dirPath && get().collapsedDirs.has(dirPath)) get().toggleDir(dirPath)
+      await get().refreshTree()
+      set({ renamingRow: path }) // the placeholder name is not one anybody wants to keep
+    },
+
+    deleteDir: async (path) => {
+      const { vault, tree } = get()
+      if (!vault) return
+      if (childrenOf(tree, path).length > 0) {
+        throw new Error(`“${baseOf(path)}” isn’t empty — move or delete what’s inside it first`)
+      }
+      // The tree only lists notes and folders, so a folder of images still looks
+      // empty here; the filesystem is the one that actually enforces the rule.
+      await vault.rmdir(path).catch((err: unknown) => {
+        throw new Error(
+          `Couldn’t delete “${baseOf(path)}” — it may still hold files that aren’t notes ` +
+            `(${String((err as Error).message)})`,
+        )
+      })
+      repath(path, null)
+      await get().refreshTree()
+    },
+
+    setRenaming: (row) => set({ renamingRow: row }),
+
+    setSort: (sort) => {
+      localStorage.setItem(SORT, sort)
+      set({ sort })
+    },
+
+    beginDrag: (path) => set({ drag: path, dropAt: null }),
+
+    hoverDrag: (at) => {
+      const { dropAt } = get()
+      // same target as last frame: skip the render, this runs on every pointermove
+      const same =
+        at === dropAt ||
+        (at &&
+          dropAt &&
+          at.dir === dropAt.dir &&
+          at.anchor === dropAt.anchor &&
+          at.place === dropAt.place)
+      if (!same) set({ dropAt: at })
+    },
+
+    endDrag: () => set({ drag: null, dropAt: null }),
+
+    applyDrop: async (path, at) => {
+      const { vault, sort } = get()
+      if (!vault || !dropAllowed(path, at)) return
+      let moved = path
+      if (dirOf(path) !== at.dir) {
+        if (get().activePath === path) await get().saveNow()
+        try {
+          moved = await moveVia(vault, path, join(at.dir, baseOf(path)))
+        } catch (err: unknown) {
+          void tell(err)
+          return
+        }
+        repath(path, moved)
+        // dropping into a collapsed folder would read as the note having vanished
+        if (at.dir && get().collapsedDirs.has(at.dir)) get().toggleDir(at.dir)
+        await get().refreshTree()
+      }
+      if (sort !== 'manual') return
+      const shown = sortTree(childrenOf(get().tree, at.dir), 'manual', get().manualOrder, at.dir)
+      setManualOrder({
+        ...get().manualOrder,
+        [at.dir]: placeIn(shown.map((n) => n.path), moved, at.anchor, at.place),
+      })
     },
 
     // On window focus: pick up edits made by Obsidian or sync while we were away.

@@ -20,7 +20,13 @@ machine, and over SSH they go straight between your browser and your own box.
   both resolve against the vault
 - **Wikilinks** — `[[Note]]` and `[[Note|alias]]` navigate on click, and create
   the note if it doesn't exist yet
-- **File tree** with folders, recent files, create, rename and delete
+- **File tree** with folders — create, rename, and delete them (empty ones only,
+  so a folder never takes your notes down with it)
+- **Drag to file** — move a note onto a folder, or into the space below the tree
+  to bring it back to the root. Works with a mouse and with a finger (press and
+  hold, so a swipe still scrolls)
+- **Sort** by name, by date edited, or manually — drag notes into whatever order
+  you want and it sticks. Recent keeps its own order either way
 - **Outline panel** that tracks your scroll position and jumps on click
 - **Self-naming notes** — a new note takes its name from the first `# heading`
   once you move off that line, and never overwrites a name you chose or a file
@@ -29,6 +35,11 @@ machine, and over SSH they go straight between your browser and your own box.
   (Obsidian, Syncthing, git) when the window regains focus
 - Dark mode, word count, adjustable tab size, and a
   [Vesper](https://github.com/raunofreiberg/vesper) theme
+- Every prompt is drawn by the app — no browser dialogs telling you what the
+  hostname says
+- **Keyboard throughout** — one tab stop for the file tree, then arrows to move,
+  left/right to open and shut folders, Enter to open a note. Dialogs trap focus
+  and hand it back to whatever you pressed
 - Works on phones and tablets, including drag-to-resize by touch
 
 ## Opening a vault
@@ -76,6 +87,10 @@ device"; otherwise they live in memory for the session.
   nonce in front of it.
 - Conflict handling is deliberately simple: if a file changed on disk while you
   have unsaved edits, your buffer wins. There is no merge UI.
+- Every folder in the vault is listed, including ones holding no notes — an
+  `attachments` folder shows up looking empty, because the tree only lists `.md`
+  files. That is what makes a folder you just made, and a folder you want to drag
+  a note into, visible at all.
 
 ## Development
 
@@ -92,7 +107,8 @@ The tests run against real implementations rather than mocks:
 | --- | --- |
 | `npm test` | the SFTP client and vault operations against a throwaway sshd |
 | `npm run test:relay` | the Worker's WebSocket↔TCP relay, in both directions |
-| `npm run test:layout` | touch resizing, the phone drawer and note naming, in real Chromium |
+| `npm run test:sort` | the name, date and manual ordering rules |
+| `npm run test:layout` | touch resizing, the phone drawer, folders, drag-to-file, note naming, keyboard navigation and reduced motion, in real Chromium |
 
 `test:layout` needs a build plus `npm i --no-save playwright-core
 @playwright/browser-chromium`. It stands up its own sshd, relay and static

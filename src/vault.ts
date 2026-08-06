@@ -4,10 +4,24 @@ export interface TreeNode {
   name: string
   path: string // vault-relative, '/'-separated, includes .md for files
   kind: 'file' | 'dir'
+  mtime: number // ms; a folder carries its newest descendant, so date sort can place it
   children?: TreeNode[]
 }
 
-export const supported = 'showDirectoryPicker' in window
+export const dirOf = (path: string): string => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+export const baseOf = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+export const join = (dir: string, name: string): string => (dir ? `${dir}/${name}` : name)
+
+const newest = (nodes: TreeNode[]): number => nodes.reduce((m, n) => Math.max(m, n.mtime), 0)
+
+// Folders first, then by name — the order the tree is stored in. Sidebar re-sorts
+// on top of this for the date and manual modes.
+export function byName(a: TreeNode, b: TreeNode): number {
+  return a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1
+}
+
+// `typeof window` guard: the SFTP tests bundle this module into Node, which has no window
+export const supported = typeof window !== 'undefined' && 'showDirectoryPicker' in window
 
 // --- IndexedDB kv (persists the directory handle across sessions) ---
 
@@ -81,26 +95,41 @@ async function walk(
   assetIndex: Map<string, string>,
 ): Promise<TreeNode[]> {
   const nodes: TreeNode[] = []
+  const notes: FileSystemFileHandle[] = []
   for await (const entry of dir.values()) {
     if (entry.name.startsWith('.')) continue // .obsidian, .git, .trash
     if (entry.kind === 'directory') {
       const children = await walk(entry, `${prefix}${entry.name}/`, mdIndex, assetIndex)
-      // ponytail: dirs with no md files are hidden; add "new folder" UI if ever needed
-      if (children.length > 0) {
-        nodes.push({ name: entry.name, path: prefix + entry.name, kind: 'dir', children })
-      }
+      // Empty folders are listed too — one you just created has nothing in it yet,
+      // and a folder you cannot see is a folder you cannot drag a note into.
+      nodes.push({
+        name: entry.name,
+        path: prefix + entry.name,
+        kind: 'dir',
+        mtime: newest(children),
+        children,
+      })
     } else if (entry.name.endsWith('.md')) {
-      const key = entry.name.slice(0, -3).toLowerCase()
-      if (!mdIndex.has(key)) mdIndex.set(key, prefix + entry.name)
-      nodes.push({ name: entry.name.slice(0, -3), path: prefix + entry.name, kind: 'file' })
+      notes.push(entry)
     } else {
       const key = entry.name.toLowerCase()
       if (!assetIndex.has(key)) assetIndex.set(key, prefix + entry.name)
     }
   }
-  nodes.sort((a, b) =>
-    a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1,
-  )
+  // One getFile() per note buys the mtime that date sorting needs; issued together
+  // so a folder costs one round of latency rather than one per file.
+  const files = await Promise.all(notes.map((h) => h.getFile()))
+  notes.forEach((h, i) => {
+    const key = h.name.slice(0, -3).toLowerCase()
+    if (!mdIndex.has(key)) mdIndex.set(key, prefix + h.name)
+    nodes.push({
+      name: h.name.slice(0, -3),
+      path: prefix + h.name,
+      kind: 'file',
+      mtime: files[i].lastModified,
+    })
+  })
+  nodes.sort(byName)
   return nodes
 }
 
@@ -171,9 +200,77 @@ export async function createNote(root: FileSystemDirectoryHandle, dirPath = ''):
 }
 
 export async function deleteNote(root: FileSystemDirectoryHandle, path: string): Promise<void> {
-  const i = path.lastIndexOf('/')
-  const dir = await resolveDir(root, i === -1 ? '' : path.slice(0, i))
-  await dir.removeEntry(path.slice(i + 1))
+  const dir = await resolveDir(root, dirOf(path))
+  await dir.removeEntry(baseOf(path))
+}
+
+// --- directories ---
+
+export async function makeDir(root: FileSystemDirectoryHandle, path: string): Promise<void> {
+  let dir = root
+  for (const seg of path.split('/').filter(Boolean)) {
+    dir = await dir.getDirectoryHandle(seg, { create: true })
+  }
+}
+
+export async function removeDir(root: FileSystemDirectoryHandle, path: string): Promise<void> {
+  const parent = await resolveDir(root, dirOf(path))
+  // No `recursive` flag on purpose: the browser refuses a folder that still has
+  // anything in it, which is exactly the "delete empty folders only" rule.
+  await parent.removeEntry(baseOf(path))
+}
+
+export async function pathExists(root: FileSystemDirectoryHandle, path: string): Promise<boolean> {
+  const parent = await resolveDir(root, dirOf(path)).catch(() => null)
+  if (!parent) return false
+  const name = baseOf(path)
+  return parent
+    .getFileHandle(name)
+    .then(() => true)
+    .catch(() => parent.getDirectoryHandle(name).then(() => true, () => false))
+}
+
+// FileSystemHandle.move() covers files from Chromium 111; directories are still
+// walked entry by entry. The byte-copy fallback (rather than read-as-text) is what
+// lets an images folder move without corrupting what is inside it.
+async function moveEntry(
+  entry: FileSystemHandle,
+  dstDir: FileSystemDirectoryHandle,
+  name: string,
+): Promise<void> {
+  if (entry.kind === 'file') {
+    const file = entry as FileSystemFileHandle
+    if (file.move) {
+      await file.move(dstDir, name)
+      return
+    }
+    const writable = await (await dstDir.getFileHandle(name, { create: true })).createWritable()
+    await writable.write(await file.getFile())
+    await writable.close()
+    return
+  }
+  const src = entry as FileSystemDirectoryHandle
+  const dst = await dstDir.getDirectoryHandle(name, { create: true })
+  const kids: FileSystemHandle[] = []
+  for await (const kid of src.values()) kids.push(kid) // snapshot: moving mutates src
+  for (const kid of kids) await moveEntry(kid, dst, kid.name)
+}
+
+export async function movePath(
+  root: FileSystemDirectoryHandle,
+  from: string,
+  to: string,
+): Promise<void> {
+  const fromParent = await resolveDir(root, dirOf(from))
+  const toParent = await resolveDir(root, dirOf(to))
+  const name = baseOf(from)
+  const entry: FileSystemHandle = await fromParent
+    .getFileHandle(name)
+    .catch(() => fromParent.getDirectoryHandle(name))
+  await moveEntry(entry, toParent, baseOf(to))
+  // A native move already unlinked the source; a copy did not. Either way the data
+  // is at the destination by now, so a failure here must not read as a failed move.
+  await fromParent.removeEntry(name, { recursive: true }).catch(() => {})
 }
 
 // --- Vault interface: local (FSA) and remote agent impls share this ---
@@ -187,7 +284,10 @@ export interface Vault {
   create(dirPath?: string): Promise<string>
   delete(path: string): Promise<void>
   assetFile(path: string): Promise<Blob>
-  rename?(path: string, newPath: string): Promise<void> // native move, when the backend has one
+  exists(path: string): Promise<boolean> // file or directory
+  mkdir(path: string): Promise<void>
+  rmdir(path: string): Promise<void> // refuses a folder that still has anything in it
+  move(path: string, newPath: string): Promise<void> // rename and reparent, file or dir
   close?(): Promise<void> // tear down a live connection, if the backend holds one
 }
 
@@ -220,25 +320,31 @@ export class LocalVault implements Vault {
   assetFile(path: string) {
     return getAssetFile(this.handle, path)
   }
+  exists(path: string) {
+    return pathExists(this.handle, path)
+  }
+  mkdir(path: string) {
+    return makeDir(this.handle, path)
+  }
+  rmdir(path: string) {
+    return removeDir(this.handle, path)
+  }
+  move(path: string, newPath: string) {
+    return movePath(this.handle, path, newPath)
+  }
 }
 
-// ponytail: rename = copy + delete (FileSystemFileHandle.move is not universally shipped)
-export async function renameVia(v: Vault, path: string, newName: string): Promise<string> {
-  const name = newName.endsWith('.md') ? newName : `${newName}.md`
-  const i = path.lastIndexOf('/')
-  const newPath = i === -1 ? name : `${path.slice(0, i)}/${name}`
+// The one door every rename and every drag goes through, so the "never clobber"
+// check cannot be forgotten at a call site.
+export async function moveVia(v: Vault, path: string, newPath: string): Promise<string> {
   if (newPath === path) return path
-  // Never overwrite: without a native rename this is read + write + delete, which
-  // would destroy whatever already sits at newPath.
-  if (await v.mtime(newPath).then(() => true, () => false)) {
-    throw new Error(`“${name}” already exists here`)
-  }
-  if (v.rename) {
-    await v.rename(path, newPath)
-    return newPath
-  }
-  const { text } = await v.read(path)
-  await v.write(newPath, text)
-  await v.delete(path)
+  if (await v.exists(newPath)) throw new Error(`“${baseOf(newPath)}” already exists here`)
+  await v.move(path, newPath)
   return newPath
+}
+
+// Rename in place: same folder, new leaf name. `.md` is implied for notes.
+export function renamedPath(path: string, newName: string, kind: 'file' | 'dir'): string {
+  const name = kind === 'file' && !newName.endsWith('.md') ? `${newName}.md` : newName
+  return join(dirOf(path), name)
 }

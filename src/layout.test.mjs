@@ -109,22 +109,55 @@ const browser = await chromium.launch({ args: ['--no-sandbox'] })
 const username = os.userInfo().username
 const keyFile = path.join(dir, 'user')
 
+const centre = (page, sel) =>
+  page.$eval(sel, (el) => {
+    const r = el.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+  })
+
+// A mouse starts dragging as soon as it moves past the slop; the first short hop
+// is what crosses it.
+async function mouseDrag(page, fromSel, toSel, edge = 0) {
+  const a = await centre(page, fromSel)
+  const b = await centre(page, toSel)
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(a.x + 12, a.y, { steps: 2 })
+  await page.mouse.move(b.x, b.y + edge, { steps: 8 })
+  await page.mouse.up()
+}
+
 // Chromium turns emulated touch into the pointer events the app listens for;
-// playwright's touchscreen only taps, so drags go through raw CDP.
-async function touchDrag(page, fromX, fromY, toX, toY) {
+// playwright's touchscreen only taps, so drags go through raw CDP. A finger has
+// to press and hold before it can move a note, because a finger that moves
+// straight away meant to scroll the tree — pass `hold` to outlast that.
+async function touchDrag(page, from, to, { hold = 0 } = {}) {
   const cdp = await page.context().newCDPSession(page)
   const at = (x, y) => [{ x, y, radiusX: 12, radiusY: 12, force: 1 }]
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(fromX, fromY) })
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(from.x, from.y) })
+  if (hold) await new Promise((r) => setTimeout(r, hold))
   for (let i = 1; i <= 5; i++) {
     const t = i / 5
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchMove',
-      touchPoints: at(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t),
+      touchPoints: at(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t),
     })
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
   await cdp.detach()
 }
+
+const dragResizer = (page, fromX, fromY, toX, toY) =>
+  touchDrag(page, { x: fromX, y: fromY }, { x: toX, y: toY })
+
+// what the tree shows, top to bottom (Recent has no data-path, so it is excluded)
+const treeOrder = (page) => page.$$eval('.tree [data-path]', (els) => els.map((e) => e.dataset.path))
+
+const exists = (...parts) =>
+  fs.access(path.join(...parts)).then(
+    () => true,
+    () => false,
+  )
 
 async function connect(page) {
   await page.goto(origin)
@@ -139,6 +172,38 @@ async function connect(page) {
 }
 
 const width = (sel) => (page) => page.$eval(sel, (el) => el.getBoundingClientRect().width)
+
+// Every ask, rename and error has to be drawn by the app. A browser dialog says
+// "<hostname> says", blocks the page and cannot be themed, so any that escapes is
+// a bug — record them all and fail at the end rather than hanging on one.
+const nativeDialogs = []
+const watchDialogs = (page, where) =>
+  page.on('dialog', (d) => {
+    nativeDialogs.push(`${where}: ${d.type()} ${JSON.stringify(d.message())}`)
+    void d.dismiss()
+  })
+
+// Row actions are revealed by hover on a desktop, and playwright checks
+// visibility before it moves the mouse, so the hover has to be its own step.
+async function clickRowAction(page, path, title) {
+  await page.hover(`[data-path="${path}"]`)
+  await page.click(`[data-path="${path}"] [title="${title}"]`)
+}
+
+// Poll from here rather than in the page: the assertions are about the order of
+// several rows, which is easier to read (and to report on failure) in node.
+async function waitFor(read, ok, label) {
+  let last
+  for (let i = 0; i < 60; i++) {
+    last = await read()
+    if (ok(last)) return last
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  throw new Error(`${label} — last saw ${JSON.stringify(last)}`)
+}
+
+const dialogText = (page) => page.textContent('.dialog-message')
+const answerDialog = (page) => page.click('.dialog .btn.primary')
 
 try {
   // A share card that 404s is invisible until someone posts the link, so check
@@ -170,6 +235,7 @@ try {
   // === iPad: landscape, touch, desktop layout with both resizers ===
   const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true })
   const pad = await tablet.newPage()
+  watchDialogs(pad, 'tablet')
   await connect(pad)
   await pad.click('.row.file:has-text("Root")') // heading-bearing note, so the outline renders
   await pad.waitForSelector('.outline')
@@ -178,18 +244,18 @@ try {
 
   // the actual bug: a finger on the grab strip did nothing, because it only
   // ever listened for mousemove
-  await touchDrag(pad, 240, 400, 350, 400)
+  await dragResizer(pad, 240, 400, 350, 400)
   const dragged = await width('.sidebar')(pad)
   assert.ok(Math.abs(dragged - 350) <= 4, `touch drag resized the sidebar (got ${dragged})`)
   assert.equal(await pad.evaluate(() => localStorage.getItem('mdd:sidebar-width')), '350', 'width persisted')
 
   // clamps hold on touch too
-  await touchDrag(pad, 350, 400, 900, 400)
+  await dragResizer(pad, 350, 400, 900, 400)
   assert.equal(await width('.sidebar')(pad), 420, 'sidebar clamps at 420')
 
   // right-hand outline resizer, dragged leftwards to widen
   const outlineBefore = await width('.outline')(pad)
-  await touchDrag(pad, 1024 - outlineBefore, 400, 1024 - outlineBefore - 90, 400)
+  await dragResizer(pad, 1024 - outlineBefore, 400, 1024 - outlineBefore - 90, 400)
   const outlineAfter = await width('.outline')(pad)
   assert.ok(Math.abs(outlineAfter - (outlineBefore + 90)) <= 4, `outline touch-resized (got ${outlineAfter})`)
 
@@ -204,8 +270,8 @@ try {
   // touch targets grew, and hover-only actions are reachable without a hover
   assert.equal(await pad.$eval('.row.file', (el) => getComputedStyle(el).height), '38px', 'coarse row height')
   assert.equal(
-    await pad.$eval('.row-action', (el) => getComputedStyle(el).visibility),
-    'visible',
+    await pad.$eval('.row-action', (el) => getComputedStyle(el).opacity),
+    '1',
     'row actions visible without hover',
   )
 
@@ -217,6 +283,7 @@ try {
     deviceScaleFactor: 3,
   })
   const ph = await phone.newPage()
+  watchDialogs(ph, 'phone')
   await connect(ph)
 
   assert.equal(await ph.$$eval('.outline', (els) => els.length), 0, 'outline dropped on a phone')
@@ -255,41 +322,46 @@ try {
   // that the on-screen keyboard would cover
   await ph.tap('.sidebar-toggle')
   await ph.waitForSelector('.sidebar')
-  let asked = null
-  ph.once('dialog', (d) => {
-    asked = { type: d.type(), value: d.defaultValue() }
-    return d.accept('Renamed on phone')
-  })
   await ph.tap('.row.file:has-text("Root") [title="Rename"]')
+  await ph.waitForSelector('.dialog')
+  assert.equal(await dialogText(ph), 'Rename note', 'the app asks, in its own dialog')
+  const nameField = await ph.waitForSelector('.dialog .text-input')
+  assert.equal(await nameField.inputValue(), 'Root', 'prefilled with the current name')
+  assert.equal(await ph.$$eval('.rename-input', (e) => e.length), 0, 'no inline field on a phone')
+  await nameField.fill('Renamed on phone')
+  await answerDialog(ph)
   // the drawer must survive the rename — it closes on opening a note, not on
   // any change of the active path
   await ph.waitForSelector('.row.file:has-text("Renamed on phone")')
-  assert.equal(asked?.type, 'prompt', 'a prompt dialog was used')
-  assert.equal(asked.value, 'Root', 'prefilled with the current name')
-  assert.equal(await ph.$$eval('.rename-input', (e) => e.length), 0, 'no inline field on a phone')
   await fs.access(path.join(vault, 'Renamed on phone.md'))
 
   // === desktop: hover is the only thing that hides row actions, so this is
   // where a note you just made can end up with no visible way to rename it ===
   const desk = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   const dk = await desk.newPage()
+  watchDialogs(dk, 'desktop')
   await connect(dk)
   await dk.click('.sidebar-header .icon-btn[title="New note"]')
   await dk.waitForSelector('.row.file.active:has-text("Untitled")')
 
   const active = await dk.$$('.row.file.active')
   assert.equal(active.length, 2, 'the new note is listed under Recent and in the tree')
+  // Faded rather than `visibility: hidden`, so they stay focusable and a keyboard
+  // user can reach them; opacity is what says whether they are on show. Polled,
+  // because the fade takes 120ms and a bare read catches it mid-transition.
+  const shown = (handle) => () => handle.evaluate((el) => getComputedStyle(el).opacity)
   for (const row of active) {
     const rename = await row.$('[title="Rename"]')
     assert.ok(rename, 'every listing of a note offers rename')
-    assert.ok(await rename.isVisible(), 'the open note shows its actions without a hover')
+    await waitFor(shown(rename), (o) => o === '1', 'the open note shows its actions without a hover')
   }
   const idle = await dk.$('.row.file:not(.active)')
-  assert.equal(
-    await (await idle.$('[title="Rename"]')).isVisible(),
-    false,
-    'notes you are not editing stay quiet until hovered',
-  )
+  const idleRename = await idle.$('[title="Rename"]')
+  await waitFor(shown(idleRename), (o) => o === '0', 'notes you are not editing stay quiet until hovered')
+  // ...but they come out for the keyboard, or they would be unreachable without a mouse
+  await idleRename.focus()
+  await waitFor(shown(idleRename), (o) => o === '1', 'focus reveals them too')
+  await dk.evaluate(() => document.activeElement?.blur())
 
   // rename through the Recent copy, which used to render a bare name
   await (await active[0].$('[title="Rename"]')).click()
@@ -326,6 +398,312 @@ try {
     'the original note was not clobbered',
   )
 
+  // === icons ===
+  // The header used to be text glyphs. If a name is wrong the import resolves to
+  // nothing and the button renders empty, which looks like a styling bug.
+  // prefix match: the hide button's title ends in a backslash, which a CSS
+  // attribute selector would read as an escape
+  for (const title of ['New note', 'New folder', 'Sort', 'Settings', 'Hide sidebar']) {
+    const svg = await dk.$(`.sidebar-header .icon-btn[title^="${title}"] svg`)
+    assert.ok(svg, `${title} renders an icon`)
+    assert.ok(await svg.evaluate((el) => el.innerHTML.length > 20), `${title} icon has artwork`)
+  }
+
+  // === folders: create, rename, drag a note in and out, delete when empty ===
+  await dk.click('.sidebar-header .icon-btn[title="New folder"]')
+  const folderField = await dk.waitForSelector('.rename-input')
+  await folderField.fill('Archive')
+  await folderField.press('Enter')
+  await dk.waitForSelector('[data-path="Archive"]')
+  assert.ok(await exists(vault, 'Archive'), 'folder created on disk')
+
+  await mouseDrag(dk, '[data-path="Kitchen notes.md"]', '[data-path="Archive"]')
+  await dk.waitForSelector('[data-path="Archive/Kitchen notes.md"]')
+  assert.ok(await exists(vault, 'Archive', 'Kitchen notes.md'), 'note dragged into the folder')
+  assert.ok(!(await exists(vault, 'Kitchen notes.md')), 'and left the root')
+
+  // renaming a folder has to take everything inside it along
+  await clickRowAction(dk, 'Archive', 'Rename')
+  const again = await dk.waitForSelector('.rename-input')
+  await again.fill('Archived')
+  await again.press('Enter')
+  await dk.waitForSelector('[data-path="Archived/Kitchen notes.md"]')
+  assert.ok(await exists(vault, 'Archived', 'Kitchen notes.md'), 'the note moved with its folder')
+
+  // deleting a folder with anything in it must say so rather than take the notes down
+  await clickRowAction(dk, 'Archived', 'Delete folder')
+  assert.match(await dialogText(dk), /Delete folder/, 'asked before deleting')
+  await answerDialog(dk)
+  await dk.waitForFunction(() =>
+    document.querySelector('.dialog-message')?.textContent?.includes('empty'),
+  )
+  assert.match(await dialogText(dk), /isn’t empty/, 'the refusal says why')
+  await answerDialog(dk)
+  await dk.waitForSelector('.dialog', { state: 'detached' })
+  assert.ok(await exists(vault, 'Archived', 'Kitchen notes.md'), 'the note inside survived')
+
+  // drag it back out: the empty space under the tree is the vault root
+  const treeBox = await dk.$eval('.tree', (el) => {
+    const r = el.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.bottom - 12 }
+  })
+  const note = await centre(dk, '[data-path="Archived/Kitchen notes.md"]')
+  await dk.mouse.move(note.x, note.y)
+  await dk.mouse.down()
+  await dk.mouse.move(note.x + 12, note.y, { steps: 2 })
+  await dk.mouse.move(treeBox.x, treeBox.y, { steps: 8 })
+  await dk.mouse.up()
+  await dk.waitForSelector('[data-path="Kitchen notes.md"]')
+  assert.ok(!(await exists(vault, 'Archived', 'Kitchen notes.md')), 'dragged back to the root')
+
+  await clickRowAction(dk, 'Archived', 'Delete folder')
+  await answerDialog(dk)
+  await dk.waitForSelector('[data-path="Archived"]', { state: 'detached' })
+  await dk.waitForSelector('.dialog', { state: 'detached' })
+  assert.ok(!(await exists(vault, 'Archived')), 'an empty folder just goes')
+
+  // === sorting ===
+  // Age one note past the others so date order is decidable rather than a race.
+  const old = new Date(Date.now() - 5 * 24 * 3600 * 1000)
+  await fs.utimes(path.join(vault, 'Kitchen notes.md'), old, old)
+  await dk.evaluate(() => window.dispatchEvent(new Event('focus'))) // picks up disk changes
+  await dk.waitForTimeout(400)
+
+  const rootFiles = (order) => order.filter((p) => !p.includes('/') && p.endsWith('.md'))
+  const byNameOrder = rootFiles(await treeOrder(dk))
+  assert.deepEqual([...byNameOrder].sort(), byNameOrder, 'name sort is alphabetical')
+
+  await dk.click('.sort-menu .icon-btn')
+  await dk.click('.menu-item:has-text("Date edited")')
+  const byDate = rootFiles(await treeOrder(dk))
+  assert.equal(byDate.at(-1), 'Kitchen notes.md', `oldest note sorts last (got ${byDate.join(', ')})`)
+  assert.equal(
+    await dk.evaluate(() => localStorage.getItem('mdd:sort')),
+    'date',
+    'sort choice persisted',
+  )
+
+  // manual: drag one note above another and the order is yours to keep
+  await dk.click('.sort-menu .icon-btn')
+  await dk.click('.menu-item:has-text("Manual")')
+  const start = rootFiles(await treeOrder(dk))
+  const [first, second] = [start[0], start[1]]
+  // -8px lands in the upper half of the row, which means "insert before it"
+  await mouseDrag(dk, `[data-path="${second}"]`, `[data-path="${first}"]`, -8)
+  await waitFor(
+    async () => rootFiles(await treeOrder(dk)).slice(0, 2),
+    (got) => got[0] === second && got[1] === first,
+    'the dragged note took the position above',
+  )
+  const savedOrder = await dk.evaluate(() => JSON.parse(localStorage.getItem('mdd:manual-order')))
+  assert.ok(savedOrder[''].indexOf(second) < savedOrder[''].indexOf(first), 'order persisted')
+
+  // Recent is a shortcut list, not a place — it must not be draggable
+  assert.equal(
+    await dk.$$eval('[data-nodrop] [data-path]', (els) => els.length),
+    0,
+    'recent rows are not drop targets',
+  )
+
+  // === touch: press and hold to drag, but a straight swipe still scrolls ===
+  // this context has been open since the resizer checks; the desktop one has
+  // moved files around since, so re-walk the vault before pointing at rows
+  await pad.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await pad.click('.sort-menu .icon-btn')
+  await pad.click('.menu-item:has-text("Name")')
+  await pad.waitForSelector('[data-path="folder"]')
+  await pad.waitForSelector('[data-path="Kitchen notes.md"]')
+  const swipeFrom = await centre(pad, '[data-path="Kitchen notes.md"]')
+  await touchDrag(pad, swipeFrom, { x: swipeFrom.x, y: swipeFrom.y + 120 })
+  await pad.waitForTimeout(300)
+  assert.ok(
+    await exists(vault, 'Kitchen notes.md'),
+    'a swipe without a hold scrolls, it does not move the note',
+  )
+
+  const holdFrom = await centre(pad, '[data-path="Kitchen notes.md"]')
+  const onto = await centre(pad, '[data-path="folder"]')
+  await touchDrag(pad, holdFrom, onto, { hold: 550 })
+  await pad.waitForSelector('[data-path="folder/Kitchen notes.md"]', { timeout: 5000 })
+  assert.ok(await exists(vault, 'folder', 'Kitchen notes.md'), 'press-and-hold drag moved the note')
+
+  // === keyboard and motion ===
+  // The file list is a pile of divs, so without this it is mouse-only. One tab
+  // stop for the tree, arrows within it.
+  const focused = () =>
+    dk.evaluate(() => document.activeElement?.getAttribute('data-path') ?? document.activeElement?.className)
+  await dk.evaluate(() => document.querySelector('.tree').focus())
+  const landed = await focused()
+  assert.ok(landed?.endsWith('.md'), `tabbing into the tree lands on a note (got ${landed})`)
+
+  const order = await treeOrder(dk)
+  await dk.keyboard.press('Home')
+  assert.equal(await focused(), order[0], 'Home goes to the top')
+  await dk.keyboard.press('ArrowDown')
+  assert.equal(await focused(), order[1], 'ArrowDown moves down the tree')
+  await dk.keyboard.press('ArrowUp')
+  assert.equal(await focused(), order[0], 'and ArrowUp comes back')
+  await dk.keyboard.press('End')
+  assert.equal(await focused(), order.at(-1), 'End goes to the bottom')
+
+  // a folder opens and closes with the arrows rather than needing a click
+  const folderRow = (await treeOrder(dk)).find((p) => !p.includes('.'))
+  if (folderRow) {
+    await dk.evaluate((p) => document.querySelector(`[data-path="${p}"]`).focus(), folderRow)
+    const expanded = () => dk.getAttribute(`[data-path="${folderRow}"]`, 'aria-expanded')
+    const before = await expanded()
+    await dk.keyboard.press(before === 'true' ? 'ArrowLeft' : 'ArrowRight')
+    assert.notEqual(await expanded(), before, 'arrow keys open and shut a folder')
+    await dk.keyboard.press(before === 'true' ? 'ArrowRight' : 'ArrowLeft')
+  }
+
+  // Answering a dialog has to put the keyboard back where it came from, or every
+  // confirm dumps you at the top of the page.
+  const victim = (await treeOrder(dk)).find((p) => p.endsWith('.md'))
+  await dk.hover(`[data-path="${victim}"]`)
+  await dk.focus(`[data-path="${victim}"] [title="Delete"]`)
+  await dk.keyboard.press('Enter')
+  await dk.waitForSelector('.dialog')
+  assert.ok(
+    await dk.evaluate(() => document.querySelector('.dialog')?.contains(document.activeElement)),
+    'focus moves into the dialog',
+  )
+  await dk.keyboard.press('Escape')
+  await dk.waitForSelector('.dialog', { state: 'detached' })
+  assert.equal(await dk.evaluate(() => document.activeElement?.title), 'Delete', 'and back to the trigger')
+  assert.ok(await exists(vault, victim), 'Escape cancelled rather than deleted')
+
+  // the sort button says whether its menu is open, and the arrows walk it
+  assert.equal(await dk.getAttribute('.sort-menu .icon-btn', 'aria-expanded'), 'false')
+  await dk.click('.sort-menu .icon-btn')
+  assert.equal(await dk.getAttribute('.sort-menu .icon-btn', 'aria-expanded'), 'true')
+  await dk.keyboard.press('ArrowDown')
+  assert.ok(
+    await dk.evaluate(() => document.activeElement?.classList.contains('menu-item')),
+    'ArrowDown steps into the menu',
+  )
+  await dk.keyboard.press('Escape')
+  await dk.waitForSelector('.menu', { state: 'detached' })
+
+  // The drawer slides; the desktop column must not. It is toggled with ⌘\ dozens
+  // of times a day, and animating a keyboard action makes it feel broken.
+  if (!(await ph.$('.sidebar'))) {
+    await ph.tap('.sidebar-toggle') // the rename check may have left it open
+    await ph.waitForSelector('.sidebar')
+  }
+  assert.match(
+    await ph.$eval('.sidebar', (el) => getComputedStyle(el).transitionProperty),
+    /transform/,
+    'the phone drawer slides in',
+  )
+  // duration, not property: with nothing declared the property computes to the
+  // initial `all`, and only the 0s duration says it never actually moves
+  assert.equal(
+    await dk.$eval('.sidebar', (el) => getComputedStyle(el).transitionDuration),
+    '0s',
+    'the desktop sidebar has no transition — it is a keyboard toggle',
+  )
+
+  // === local folder vault ===
+  // Everything above went over SSH, where a move is one SFTP rename. The local
+  // backend has to build a move out of File System Access calls — recursing into
+  // a folder, moving each file, then removing what it emptied — and that is the
+  // code that can lose a note if it is wrong. The origin-private filesystem hands
+  // out real FileSystemDirectoryHandles, so pointing the picker at one exercises
+  // that path end to end without a picker dialog nobody can click.
+  const local = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  await local.addInitScript(() => {
+    window.showDirectoryPicker = async () =>
+      (await navigator.storage.getDirectory()).getDirectoryHandle('vault', { create: true })
+  })
+  const lo = await local.newPage()
+  watchDialogs(lo, 'local')
+
+  const onDisk = () =>
+    lo.evaluate(async () => {
+      const walk = async (dir, prefix) => {
+        const out = []
+        for await (const [name, handle] of dir.entries()) {
+          out.push(prefix + name + (handle.kind === 'directory' ? '/' : ''))
+          if (handle.kind === 'directory') out.push(...(await walk(handle, `${prefix}${name}/`)))
+        }
+        return out
+      }
+      const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('vault', {
+        create: true,
+      })
+      return (await walk(root, '')).sort()
+    })
+
+  await lo.goto(origin)
+  await lo.click('button:has-text("Open folder")')
+  await lo.waitForSelector('.sidebar')
+
+  await lo.click('.sidebar-header .icon-btn[title="New note"]')
+  await lo.waitForSelector('.row.file.active:has-text("Untitled")')
+  await lo.keyboard.type('# Local note\nbody')
+  await lo.waitForSelector('[data-path="Local note.md"]')
+
+  await lo.click('.sidebar-header .icon-btn[title="New folder"]')
+  const localField = await lo.waitForSelector('.rename-input')
+  await localField.fill('Kept')
+  await localField.press('Enter')
+  await lo.waitForSelector('[data-path="Kept"]')
+  assert.deepEqual(await onDisk(), ['Kept/', 'Local note.md'], 'folder made in the local vault')
+
+  await mouseDrag(lo, '[data-path="Local note.md"]', '[data-path="Kept"]')
+  await lo.waitForSelector('[data-path="Kept/Local note.md"]')
+  assert.deepEqual(
+    await onDisk(),
+    ['Kept/', 'Kept/Local note.md'],
+    'the note moved into the folder and left nothing behind',
+  )
+
+  // the recursive case: renaming the folder has to carry the note with it
+  await clickRowAction(lo, 'Kept', 'Rename')
+  const localAgain = await lo.waitForSelector('.rename-input')
+  await localAgain.fill('Moved')
+  await localAgain.press('Enter')
+  await lo.waitForSelector('[data-path="Moved/Local note.md"]')
+  assert.deepEqual(await onDisk(), ['Moved/', 'Moved/Local note.md'], 'folder rename moved its note')
+  // the heading's `#` is hidden by the live preview once the cursor leaves the line
+  assert.equal(
+    await lo.textContent('.cm-content'),
+    'Local notebody',
+    'and the open note still reads its contents from the new path',
+  )
+
+  const localTree = await lo.$eval('.tree', (el) => {
+    const r = el.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.bottom - 12 }
+  })
+  const localNote = await centre(lo, '[data-path="Moved/Local note.md"]')
+  await lo.mouse.move(localNote.x, localNote.y)
+  await lo.mouse.down()
+  await lo.mouse.move(localNote.x + 12, localNote.y, { steps: 2 })
+  await lo.mouse.move(localTree.x, localTree.y, { steps: 8 })
+  await lo.mouse.up()
+  await lo.waitForSelector('[data-path="Local note.md"]')
+
+  await clickRowAction(lo, 'Moved', 'Delete folder')
+  await answerDialog(lo)
+  await lo.waitForSelector('[data-path="Moved"]', { state: 'detached' })
+  assert.deepEqual(await onDisk(), ['Local note.md'], 'the emptied folder was removed')
+
+  // Reduced motion means fewer and gentler, not none: the fade still explains
+  // that something arrived, only the movement goes.
+  await lo.emulateMedia({ reducedMotion: 'reduce' })
+  await clickRowAction(lo, 'Local note.md', 'Delete')
+  await lo.waitForSelector('.dialog')
+  const motion = await lo.$eval('.dialog', (el) => {
+    const s = getComputedStyle(el)
+    return { transform: s.transform, props: s.transitionProperty }
+  })
+  assert.equal(motion.transform, 'none', 'reduced motion drops the scale')
+  assert.match(motion.props, /opacity/, 'and keeps the fade')
+  await lo.click('.dialog .btn:has-text("Cancel")')
+  await lo.emulateMedia({ reducedMotion: null })
+
   if (process.env.SHOTS) {
     const shot = (page, name) => page.screenshot({ path: `${process.env.SHOTS}/${name}.png` })
     // the phone rename test leaves the drawer open
@@ -342,7 +720,9 @@ try {
     await shot(w, 'welcome')
   }
 
-  console.log('layout self-check OK (touch resize + phone drawer)')
+  assert.deepEqual(nativeDialogs, [], 'nothing fell back to a browser dialog')
+
+  console.log('layout self-check OK (touch resize, phone drawer, folders, drag, sort)')
 } finally {
   await browser.close().catch(() => {})
   wss.close()
