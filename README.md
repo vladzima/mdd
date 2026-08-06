@@ -5,7 +5,7 @@ own files — a local folder, or a directory on any server you can SSH into.
 
 **[edit.computer](https://edit.computer)** — no account, no install, no upload.
 
-[![edit.computer open on a laptop showing its welcome screen, and on a tablet showing a note being edited alongside the file tree and outline](public/og.png)](https://edit.computer)
+[![edit.computer open on a laptop turned towards the camera, in a dark theme: a sidebar with a search field, recent notes and a folder tree, and a note being edited beside it](public/og-v2.png)](https://edit.computer)
 
 It reads and writes plain `.md` files in place, so an Obsidian vault, a Jekyll
 `_posts` directory, or a folder of notes all work as-is. Nothing is copied to a
@@ -27,6 +27,9 @@ machine, and over SSH they go straight between your browser and your own box.
   hold, so a swipe still scrolls)
 - **Sort** by name, by date edited, or manually — drag notes into whatever order
   you want and it sticks. Recent keeps its own order either way
+- **Search** (<kbd>⌘K</kbd>) across names and note text, with the matching line
+  shown beside each hit. Names answer as you type; the text scan follows and
+  remembers what it read, so searching again is instant
 - **Outline panel** that tracks your scroll position and jumps on click
 - **Self-naming notes** — a new note takes its name from the first `# heading`
   once you move off that line, and never overwrites a name you chose or a file
@@ -107,8 +110,9 @@ The tests run against real implementations rather than mocks:
 | --- | --- |
 | `npm test` | the SFTP client and vault operations against a throwaway sshd |
 | `npm run test:relay` | the Worker's WebSocket↔TCP relay, in both directions |
+| `npm run test:search` | name matching, snippet extraction and the cached text scan |
 | `npm run test:sort` | the name, date and manual ordering rules |
-| `npm run test:layout` | touch resizing, the phone drawer, folders, drag-to-file, note naming, keyboard navigation and reduced motion, in real Chromium |
+| `npm run test:layout` | touch resizing, the phone drawer, folders, drag-to-file, search, note naming, keyboard navigation and reduced motion, in real Chromium |
 
 `test:layout` needs a build plus `npm i --no-save playwright-core
 @playwright/browser-chromium`. It stands up its own sshd, relay and static

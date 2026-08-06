@@ -29,13 +29,16 @@
       property="og:description"
       content="A markdown editor that runs in your browser and writes straight to your own files — a local folder, or any server you can SSH into. No account, no upload, open source."
     />
-    <meta property="og:image" content="https://edit.computer/og.png" />
+    <!-- Versioned filename on purpose: every scraper caches an og:image by URL, so
+         replacing the picture at the same path leaves the old one on X, Slack and
+         iMessage indefinitely. Bump the suffix whenever the card changes. -->
+    <meta property="og:image" content="https://edit.computer/og-v2.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="edit.computer open on a laptop showing its welcome screen, and on a tablet showing a note being edited alongside the file tree and outline."
+      content="edit.computer open on a laptop turned towards the camera, in a dark theme: a sidebar with a search field, recent notes and a folder tree, and a note being edited beside it."
     />
 
     <!-- title, description and image fall back to the og: tags above -->

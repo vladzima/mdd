@@ -15,6 +15,7 @@ import {
 import { childrenOf, placeIn, remapOrder, sortTree, SORTS, type ManualOrder, type Sort } from './sort'
 import { dropAllowed, type DropAt } from './drag'
 import { tell } from './dialog'
+import { forgetSearchCache } from './search'
 import { isNarrow } from './layout'
 import { saveSsh, savedSsh, type SshConfig } from './sshConfig'
 
@@ -190,6 +191,7 @@ export const useStore = create<Store>()((set, get) => {
   async function activate(vault: Vault) {
     await get().vault?.close?.() // drop a previous SSH session before swapping vaults
     assetCache.clear() // object URLs from a previous vault would serve the wrong files
+    forgetSearchCache()
     set({ vault, pendingVault: null, vaultName: vault.name })
     await get().refreshTree()
     const last = localStorage.getItem(LAST_FILE)

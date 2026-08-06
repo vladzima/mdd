@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ChevronRight from 'reicon-react/icons/ChevronRight'
+import CloseCircle from 'reicon-react/icons/CloseCircle'
 import FolderAdd from 'reicon-react/icons/FolderAdd'
 import NoteAdd from 'reicon-react/icons/NoteAdd'
 import Pen from 'reicon-react/icons/Pen'
+import SearchIcon from 'reicon-react/icons/Search'
 import Settings2 from 'reicon-react/icons/Settings2'
 import SidebarLeft from 'reicon-react/icons/SidebarLeft'
 import Sort from 'reicon-react/icons/Sort'
@@ -15,9 +17,10 @@ import { startDrag } from './drag'
 import { isNarrow } from './layout'
 import { useLingering } from './motion'
 import { startResize } from './resize'
+import { LIMIT, MIN_TEXT, searchNames, searchText, type Hit } from './search'
 import { sortTree, type Sort as SortMode } from './sort'
 import { useStore } from './store'
-import type { TreeNode } from './vault'
+import { dirOf, type TreeNode } from './vault'
 
 const say = (err: unknown) => void tell(err)
 
@@ -36,6 +39,37 @@ export function Sidebar({ closing }: { closing?: boolean }) {
   const atRoot = useStore((s) => s.dropAt?.dir === '' && s.dropAt.anchor === null)
 
   const sorted = useMemo(() => sortTree(tree, sort, manualOrder), [tree, sort, manualOrder])
+
+  const [query, setQuery] = useState('')
+  const q = query.trim()
+  const nameHits = useMemo(() => searchNames(tree, q), [tree, q])
+  const [textHits, setTextHits] = useState<Hit[]>([])
+  const [scanning, setScanning] = useState(false)
+  const hits = useMemo(() => [...nameHits, ...textHits].slice(0, LIMIT), [nameHits, textHits])
+
+  // Names are already in hand; the text scan has files to read, so it waits for a
+  // pause in the typing and lands underneath them.
+  useEffect(() => {
+    setTextHits([])
+    const vault = useStore.getState().vault
+    if (!vault || q.length < MIN_TEXT) return
+    const skip = new Set(nameHits.map((h) => h.path))
+    let alive = true
+    const timer = setTimeout(() => {
+      setScanning(true)
+      void searchText(vault, tree, q, skip, () => alive)
+        .then((found) => {
+          if (alive) setTextHits(found)
+        })
+        .finally(() => {
+          if (alive) setScanning(false)
+        })
+    }, 150)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [q, tree, nameHits])
 
   const existingPaths = useMemo(() => {
     const paths = new Set<string>()
@@ -86,6 +120,38 @@ export function Sidebar({ closing }: { closing?: boolean }) {
           <SidebarLeft size={16} />
         </button>
       </div>
+      <div className="search-box">
+        <SearchIcon size={14} aria-hidden="true" />
+        <input
+          className="search-input"
+          placeholder="Search"
+          title="Search notes (⌘K)"
+          aria-label="Search notes"
+          value={query}
+          onChange={(e) => setQuery(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setQuery('')
+              e.currentTarget.blur()
+            }
+            // straight from the field into the results, without a detour by Tab
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              document.querySelector<HTMLElement>('.tree .row[data-path]')?.focus()
+            }
+          }}
+        />
+        {query && (
+          <button
+            className="icon-btn"
+            title="Clear search"
+            aria-label="Clear search"
+            onClick={() => setQuery('')}
+          >
+            <CloseCircle size={14} />
+          </button>
+        )}
+      </div>
       {/* the empty space below the tree is the drop target for "move back to the
           vault root" — without it there is no way out of a folder by drag */}
       <nav
@@ -97,34 +163,109 @@ export function Sidebar({ closing }: { closing?: boolean }) {
         onKeyDown={onTreeKey}
         data-droproot
       >
-        {recentShown.length > 0 && (
-          <>
-            {/* Recent is a shortcut list, not a place in the tree — dropping onto it
-                would have to mean something, and nothing it could mean is useful. */}
-            <div data-nodrop>
-              <div className="section-label">Recent</div>
-              {recentShown.map((path) => (
-                <FileRow
-                  key={path}
-                  path={path}
-                  name={path.split('/').pop()!.replace(/\.md$/, '')}
-                  indent={10}
-                  recent
-                />
-              ))}
-            </div>
-            <div className="section-label">Notes</div>
-          </>
+        {q ? (
+          <Results hits={hits} query={q} scanning={scanning} />
+        ) : (
+          <Tree sorted={sorted} recentShown={recentShown} />
         )}
-        {sorted.map((node) => (
-          <Node key={node.path} node={node} depth={0} />
-        ))}
       </nav>
       <div
         className="resizer"
         onPointerDown={(e) => startResize(e, (x) => setSidebarWidth(Math.min(420, Math.max(180, x))))}
       />
     </aside>
+  )
+}
+
+function Tree({ sorted, recentShown }: { sorted: TreeNode[]; recentShown: string[] }) {
+  return (
+    <>
+      {recentShown.length > 0 && (
+        <>
+          {/* Recent is a shortcut list, not a place in the tree — dropping onto it
+              would have to mean something, and nothing it could mean is useful. */}
+          <div data-nodrop>
+            <div className="section-label">Recent</div>
+            {recentShown.map((path) => (
+              <FileRow
+                key={path}
+                path={path}
+                name={path.split('/').pop()!.replace(/\.md$/, '')}
+                indent={10}
+                recent
+              />
+            ))}
+          </div>
+          <div className="section-label">Notes</div>
+        </>
+      )}
+      {sorted.map((node) => (
+        <Node key={node.path} node={node} depth={0} />
+      ))}
+    </>
+  )
+}
+
+function Results({ hits, query, scanning }: { hits: Hit[]; query: string; scanning: boolean }) {
+  const count = hits.length
+  return (
+    // Results are a lookup, not a place in the vault: nothing can be dropped here.
+    <div data-nodrop>
+      <div className="section-label">
+        {count
+          ? `${count}${count === LIMIT ? '+' : ''} ${count === 1 ? 'result' : 'results'}`
+          : scanning
+            ? 'Searching…'
+            : 'No matches'}
+      </div>
+      {hits.map((hit) => (
+        <HitRow key={hit.path} hit={hit} len={query.length} />
+      ))}
+      {query.length < MIN_TEXT && (
+        <div className="menu-note">Two letters or more also searches inside notes.</div>
+      )}
+      {scanning && count > 0 && <div className="menu-note">Still reading notes…</div>}
+    </div>
+  )
+}
+
+// A result carries no rename or delete: it is a way to reach a note, and the row
+// is already two lines tall. `data-path` is what the tree's arrow keys walk.
+function HitRow({ hit, len }: { hit: Hit; len: number }) {
+  const activePath = useStore((s) => s.activePath)
+  const openFile = useStore((s) => s.openFile)
+  const active = activePath === hit.path
+  const dir = dirOf(hit.path)
+
+  return (
+    <div
+      className={`row file hit${active ? ' active' : ''}`}
+      data-path={hit.path}
+      data-kind="file"
+      role="treeitem"
+      aria-selected={active}
+      aria-label={hit.name}
+      tabIndex={-1}
+      onClick={() => void openFile(hit.path)}
+    >
+      <span className="hit-text">
+        <span className="row-name">{hit.line ? hit.name : mark(hit.name, hit.at, len)}</span>
+        {/* the folder stands in when the name matched: two notes can share a name */}
+        {(hit.line ?? dir) && (
+          <span className="hit-line">{hit.line ? mark(hit.line, hit.at, len) : dir}</span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+function mark(text: string, at: number, len: number) {
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark>{text.slice(at, at + len)}</mark>
+      {text.slice(at + len)}
+    </>
   )
 }
 

@@ -13,6 +13,7 @@
     "test": "esbuild src/sftp.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.sftptest.mjs --log-level=error && node --import 'data:text/javascript,globalThis.self=globalThis' .sftptest.mjs; code=$?; rm -f .sftptest.mjs; exit $code",
     "dev:worker": "wrangler dev --port 8787",
     "test:relay": "node worker/relay.test.mjs",
+    "test:search": "esbuild src/search.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.searchtest.mjs --log-level=error && node .searchtest.mjs; code=$?; rm -f .searchtest.mjs; exit $code",
     "test:sort": "esbuild src/sort.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.sorttest.mjs --log-level=error && node .sorttest.mjs; code=$?; rm -f .sorttest.mjs; exit $code",
     "test:layout": "node src/layout.test.mjs"
   },

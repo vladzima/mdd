@@ -44,6 +44,13 @@ export default function App() {
         e.preventDefault()
         useStore.getState().toggleSidebar()
       }
+      // The field lives in the sidebar, so a hidden sidebar has to come back first;
+      // the focus waits a turn for React to have put it on the page.
+      if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        if (!useStore.getState().sidebarOpen) useStore.getState().toggleSidebar()
+        setTimeout(() => document.querySelector<HTMLInputElement>('.search-input')?.focus())
+      }
     }
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (useStore.getState().dirty) e.preventDefault()
@@ -133,7 +140,7 @@ function Welcome() {
   return (
     <div className="welcome">
       <h1>edit.computer</h1>
-      <p className="tagline">A fast markdown editor for your vault — local folder or SSH.</p>
+      <p className="tagline">It’s a markdown editor. It works.</p>
       {showForm ? (
         <Connect onCancel={() => setShowForm(false)} />
       ) : (

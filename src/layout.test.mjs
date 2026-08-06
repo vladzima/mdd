@@ -585,6 +585,62 @@ try {
   await dk.keyboard.press('Escape')
   await dk.waitForSelector('.menu', { state: 'detached' })
 
+  // === search ===
+  // A vault you cannot search is one you can only browse. Names come out of the
+  // tree already in memory, bodies have to be read off the server, so the two
+  // arrive separately and both have to land.
+  await dk.click('.sidebar-header .icon-btn[title="New note"]')
+  await dk.waitForSelector('.row.file.active:has-text("Untitled")')
+  await dk.click('.cm-content') // the editor takes focus a beat after the row appears
+  await dk.keyboard.type('# Zeppelin log\nthe hydrogen inventory needs checking')
+  await dk.waitForSelector('[data-path="Zeppelin log.md"]')
+
+  const results = () => dk.$$eval('.row.hit', (els) => els.map((e) => e.dataset.path))
+  await dk.fill('.search-input', 'zepp')
+  await waitFor(results, (r) => r.join() === 'Zeppelin log.md', 'a name match is listed')
+  assert.equal(
+    await dk.textContent('.row.hit mark'),
+    'Zepp',
+    'the matched run is marked, in the case the note actually spells it',
+  )
+  assert.equal(await dk.$$eval('.row.dir', (e) => e.length), 0, 'the tree gives way to the results')
+
+  // a word in no note's name — this one costs a read per note
+  await dk.fill('.search-input', 'hydrogen')
+  await waitFor(results, (r) => r.join() === 'Zeppelin log.md', 'a body match is listed')
+  assert.equal(
+    await dk.textContent('.row.hit .hit-line'),
+    'the hydrogen inventory needs checking',
+    'and it shows the line it matched on',
+  )
+
+  // the field is where a search starts, so the results have to be reachable from it
+  await dk.focus('.search-input')
+  await dk.keyboard.press('ArrowDown')
+  assert.equal(await focused(), 'Zeppelin log.md', 'ArrowDown steps from the field into the results')
+
+  await dk.fill('.search-input', 'no-such-note-anywhere')
+  await waitFor(
+    () => dk.textContent('.section-label'),
+    (t) => t === 'No matches',
+    'an empty result says so rather than looking like an empty vault',
+  )
+
+  await dk.focus('.search-input')
+  await dk.keyboard.press('Escape')
+  await dk.waitForSelector('.row.dir')
+  assert.equal(await dk.inputValue('.search-input'), '', 'Escape clears the field and the tree returns')
+
+  // ⌘K is how anyone actually reaches the field
+  await dk.evaluate(() => document.querySelector('.cm-content')?.focus())
+  await dk.keyboard.press('Control+k')
+  await waitFor(
+    () => dk.evaluate(() => document.activeElement?.className),
+    (c) => String(c).includes('search-input'),
+    '⌘K puts the keyboard in the search field',
+  )
+  await dk.keyboard.press('Escape')
+
   // The drawer slides; the desktop column must not. It is toggled with ⌘\ dozens
   // of times a day, and animating a keyboard action makes it feel broken.
   if (!(await ph.$('.sidebar'))) {
@@ -722,7 +778,7 @@ try {
 
   assert.deepEqual(nativeDialogs, [], 'nothing fell back to a browser dialog')
 
-  console.log('layout self-check OK (touch resize, phone drawer, folders, drag, sort)')
+  console.log('layout self-check OK (touch resize, phone drawer, folders, drag, sort, search)')
 } finally {
   await browser.close().catch(() => {})
   wss.close()
