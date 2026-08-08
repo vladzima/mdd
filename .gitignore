@@ -29,3 +29,6 @@ dist-ssr
 
 # transitions.dev reference material, kept locally for design work — not app code
 transitions/
+
+# superpowers working notes — local only, real specs live in docs/specs/
+docs/superpowers/
