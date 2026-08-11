@@ -85,7 +85,12 @@ export function Sidebar({ closing }: { closing?: boolean }) {
     collect(tree)
     return paths
   }, [tree])
-  const recentShown = recents.filter((p) => existingPaths.has(p)).slice(0, 5)
+  // A pinned note already has one-tap access a row above, so listing it under
+  // Recent would waste one of the five slots on a duplicate. Display-only:
+  // unpin, and the note resurfaces here if it is still fresh.
+  const recentShown = recents
+    .filter((p) => existingPaths.has(p) && !pinned.includes(p))
+    .slice(0, 5)
   // A pin outlives its note being deleted or renamed elsewhere; only show what exists.
   const pinnedShown = pinned.filter((p) => existingPaths.has(p))
 

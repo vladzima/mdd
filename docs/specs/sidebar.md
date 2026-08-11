@@ -14,7 +14,10 @@ and shut folders, Enter to open.
 Every note row carries a pin toggle; pinned notes sit in their own section above
 Recent. Dragging within the section reorders it — pins keep that order whatever
 the sort mode — and each vault remembers its own list (Recent, by contrast, is
-global). Search results carry no pin toggle; pinning happens in the tree.
+global). Search results carry no pin toggle; pinning happens in the tree. A
+pinned note is not repeated under Recent — the slot goes to a note without
+one-tap access — and resurfaces there once unpinned, if still fresh. The tree
+always lists every note regardless: shortcuts index it, they never replace it.
 
 Row actions (pin, rename, delete; folders add create-note and create-folder)
 overlay the right edge of the row they belong to instead of reserving width, so
@@ -65,3 +68,17 @@ drag is live or the row is renaming. On touch it stays visible.
   - Keyboard focus and the active row still reveal actions; touch keeps them
     always on
   - Actions hide during a drag and while a row is being renamed
+
+- [x] SIDE-004 Pinned notes don't repeat under Recent
+  A note that is pinned already has one-tap access in the Pinned section, so
+  also listing it under Recent spends one of the five slots on a duplicate and
+  can show the same note three times near the top of the sidebar. Filter pinned
+  notes out of the Recent display; the tree stays complete. Display-only —
+  unpinning lets the note reappear in Recent if it is still among the last
+  opened.
+
+  **Implemented:**
+  - Recent skips notes that are currently pinned; the freed slot shows the next
+    most recent note
+  - Unpinning brings the note back to Recent if it is still fresh
+  - The tree is untouched — it always lists every note
