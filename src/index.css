@@ -122,7 +122,7 @@
   .sidebar,
   .dialog,
   .menu,
-  .row-action {
+  .row-actions {
     transition-property: opacity, background-color, color !important;
     transform: none !important;
   }
@@ -316,6 +316,7 @@ button {
 }
 
 .row {
+  position: relative; /* anchors the action cluster to the row's right edge */
   display: flex;
   align-items: center;
   gap: 4px;
@@ -327,12 +328,16 @@ button {
   transition: background-color var(--dur-quick) ease;
 }
 
+/* --row-bg feeds the action cluster's gradient, so its solid end always matches
+   the surface behind it; source order keeps active winning over hover for both. */
 .row:hover {
   background: var(--hover);
+  --row-bg: var(--hover);
 }
 
 .row.active {
   background: var(--active);
+  --row-bg: var(--active);
 }
 
 .row.dir {
@@ -477,7 +482,22 @@ button {
   line-height: 1.35;
 }
 
-.row-action {
+/* The cluster overlays the row's right edge rather than sitting in its flex
+   layout, so an unhovered name gets the full row width instead of losing it to
+   invisible buttons. The gradient fades the covered end of the name out under
+   the buttons; without hover or active state it falls back to the sidebar's own
+   background, which is what shows through a transparent row. */
+.row-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 16px;
+  border-radius: 0 5px 5px 0;
+  background: linear-gradient(to right, transparent, var(--row-bg, var(--sidebar-bg)) 16px);
   opacity: 0;
   pointer-events: none;
   transform: translateX(3px);
@@ -489,12 +509,21 @@ button {
 /* the open note is the one you are most likely to rename, so never make its
    controls depend on finding them by hover — and :focus-within brings them out
    for anyone arriving by keyboard */
-.row:hover .row-action,
-.row:focus-within .row-action,
-.row.active .row-action {
+.row:hover .row-actions,
+.row:focus-within .row-actions,
+.row.active .row-actions {
   opacity: 1;
   pointer-events: auto;
   transform: none;
+}
+
+/* Mid-drag the cluster is unusable and would paint its gradient as a phantom
+   patch under the pointer; while renaming it would sit on the field's text.
+   Both rules tie with the reveal rules on specificity, so they must follow them. */
+.sidebar.dragging .row-actions,
+.row:has(.rename-input) .row-actions {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .icon-btn {
@@ -1034,7 +1063,7 @@ img.cm-image-broken {
    `pointer`/`hover`: attaching a mouse to an iPad flips those to fine/hover and
    would take the touch affordances away while the screen is still a screen. */
 @media (hover: none), (any-pointer: coarse) {
-  .row-action {
+  .row-actions {
     opacity: 1;
     pointer-events: auto;
     transform: none;

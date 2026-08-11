@@ -465,52 +465,54 @@ function DirRow({ node, depth }: { node: TreeNode; depth: number }) {
           <ChevronRight size={12} />
         </span>
         <RowName row={node.path} path={node.path} name={node.name} kind="dir" />
-        <button
-          className="icon-btn row-action"
-          title="New note here" aria-label="New note in this folder"
-          onClick={(e) => {
-            e.stopPropagation()
-            void createFile(node.path)
-          }}
-        >
-          <NoteAdd size={14} />
-        </button>
-        <button
-          className="icon-btn row-action"
-          title="New folder here" aria-label="New folder in this folder"
-          onClick={(e) => {
-            e.stopPropagation()
-            void createDir(node.path).catch(say)
-          }}
-        >
-          <FolderAdd size={14} />
-        </button>
-        <button
-          className="icon-btn row-action"
-          title="Rename"
-          aria-label={`Rename folder ${node.name}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            startRename(node.path, node.path, node.name, 'dir')
-          }}
-        >
-          <Pen size={14} />
-        </button>
-        <button
-          className="icon-btn row-action"
-          title="Delete folder"
-          aria-label={`Delete folder ${node.name}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            void ask(`Delete folder “${node.name}”?`)
-              .then((ok) => {
-                if (ok) return deleteDir(node.path)
-              })
-              .catch(say)
-          }}
-        >
-          <Trash2 size={14} />
-        </button>
+        <span className="row-actions">
+          <button
+            className="icon-btn"
+            title="New note here" aria-label="New note in this folder"
+            onClick={(e) => {
+              e.stopPropagation()
+              void createFile(node.path)
+            }}
+          >
+            <NoteAdd size={14} />
+          </button>
+          <button
+            className="icon-btn"
+            title="New folder here" aria-label="New folder in this folder"
+            onClick={(e) => {
+              e.stopPropagation()
+              void createDir(node.path).catch(say)
+            }}
+          >
+            <FolderAdd size={14} />
+          </button>
+          <button
+            className="icon-btn"
+            title="Rename"
+            aria-label={`Rename folder ${node.name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              startRename(node.path, node.path, node.name, 'dir')
+            }}
+          >
+            <Pen size={14} />
+          </button>
+          <button
+            className="icon-btn"
+            title="Delete folder"
+            aria-label={`Delete folder ${node.name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              void ask(`Delete folder “${node.name}”?`)
+                .then((ok) => {
+                  if (ok) return deleteDir(node.path)
+                })
+                .catch(say)
+            }}
+          >
+            <Trash2 size={14} />
+          </button>
+        </span>
       </div>
       {!collapsed &&
         node.children!.map((child) => <Node key={child.path} node={child} depth={depth + 1} />)}
@@ -562,44 +564,46 @@ function FileRow({
         onClick={() => void openFile(path)}
       >
         <RowName row={rowId} path={path} name={name} kind="file" />
-        <button
-          className="icon-btn row-action"
-          title={isPinned ? 'Unpin' : 'Pin'}
-          aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            togglePin(path)
-          }}
-        >
-          {/* outline tack pins; the filled one marks a pinned note and unpins */}
-          {isPinned ? <PinTack size={14} /> : <Thumbtack2 size={14} />}
-        </button>
-        <button
-          className="icon-btn row-action"
-          title="Rename"
-          aria-label={`Rename ${name}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            startRename(rowId, path, name, 'file')
-          }}
-        >
-          <Pen size={14} />
-        </button>
-        <button
-          className="icon-btn row-action"
-          title="Delete"
-          aria-label={`Delete ${name}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            void ask(`Delete “${name}”?`)
-              .then((ok) => {
-                if (ok) return deleteFile(path)
-              })
-              .catch(say)
-          }}
-        >
-          <Trash2 size={14} />
-        </button>
+        <span className="row-actions">
+          <button
+            className="icon-btn"
+            title={isPinned ? 'Unpin' : 'Pin'}
+            aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              togglePin(path)
+            }}
+          >
+            {/* outline tack pins; the filled one marks a pinned note and unpins */}
+            {isPinned ? <PinTack size={14} /> : <Thumbtack2 size={14} />}
+          </button>
+          <button
+            className="icon-btn"
+            title="Rename"
+            aria-label={`Rename ${name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              startRename(rowId, path, name, 'file')
+            }}
+          >
+            <Pen size={14} />
+          </button>
+          <button
+            className="icon-btn"
+            title="Delete"
+            aria-label={`Delete ${name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              void ask(`Delete “${name}”?`)
+                .then((ok) => {
+                  if (ok) return deleteFile(path)
+                })
+                .catch(say)
+            }}
+          >
+            <Trash2 size={14} />
+          </button>
+        </span>
       </div>
       {insert === 'after' && <DropLine indent={indent} />}
     </>

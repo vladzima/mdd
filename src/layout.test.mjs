@@ -270,7 +270,7 @@ try {
   // touch targets grew, and hover-only actions are reachable without a hover
   assert.equal(await pad.$eval('.row.file', (el) => getComputedStyle(el).height), '38px', 'coarse row height')
   assert.equal(
-    await pad.$eval('.row-action', (el) => getComputedStyle(el).opacity),
+    await pad.$eval('.row-actions', (el) => getComputedStyle(el).opacity),
     '1',
     'row actions visible without hover',
   )
@@ -349,7 +349,10 @@ try {
   // Faded rather than `visibility: hidden`, so they stay focusable and a keyboard
   // user can reach them; opacity is what says whether they are on show. Polled,
   // because the fade takes 120ms and a bare read catches it mid-transition.
-  const shown = (handle) => () => handle.evaluate((el) => getComputedStyle(el).opacity)
+  // The buttons live in a .row-actions cluster and that is what fades, so the
+  // cluster's opacity is the truth about whether its buttons are on show.
+  const shown = (handle) => () =>
+    handle.evaluate((el) => getComputedStyle(el.closest('.row-actions')).opacity)
   for (const row of active) {
     const rename = await row.$('[title="Rename"]')
     assert.ok(rename, 'every listing of a note offers rename')

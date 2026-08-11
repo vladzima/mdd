@@ -16,6 +16,13 @@ Recent. Dragging within the section reorders it — pins keep that order whateve
 the sort mode — and each vault remembers its own list (Recent, by contrast, is
 global). Search results carry no pin toggle; pinning happens in the tree.
 
+Row actions (pin, rename, delete; folders add create-note and create-folder)
+overlay the right edge of the row they belong to instead of reserving width, so
+an unhovered name runs the full row. The cluster matches the row's background —
+hover, active, or plain — with a short gradient fade over the end of the name.
+Hover, keyboard focus, or being the active note reveals it; it hides while a
+drag is live or the row is renaming. On touch it stays visible.
+
 # Tasks
 
 - [x] SIDE-001 Pinned notes in the sidebar !high
@@ -29,7 +36,7 @@ global). Search results carry no pin toggle; pinning happens in the tree.
   - Pins persist per vault and follow renames, moves, and deletes
   - Fixed manual sort dropping a note onto itself sending it to the end
 
-- [ ] SIDE-003 Row actions overlay the row instead of reserving space
+- [x] SIDE-003 Row actions overlay the row instead of reserving space
   The hover buttons (rename, delete, pin) sit in the row's flex layout, so they
   reserve width on the right and truncate note names even though they're only
   visible on hover. Instead, absolutely position the action cluster over the
@@ -49,3 +56,12 @@ global). Search results carry no pin toggle; pinning happens in the tree.
   - Independent of SIDE-001, but SIDE-001's pin button adds a third action,
     making the reserved-width problem worse — do this soon after; no
     @blocked_by.
+
+  **Implemented:**
+  - Action buttons overlay the row's right edge; names get the full width until
+    the actions are revealed
+  - Overlay matches the hover/active/plain row background per theme, with a
+    gradient fade over the name's end
+  - Keyboard focus and the active row still reveal actions; touch keeps them
+    always on
+  - Actions hide during a drag and while a row is being renamed
