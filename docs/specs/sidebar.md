@@ -28,3 +28,24 @@ global). Search results carry no pin toggle; pinning happens in the tree.
   - Drag within the section reorders it, in every sort mode, mouse and touch
   - Pins persist per vault and follow renames, moves, and deletes
   - Fixed manual sort dropping a note onto itself sending it to the end
+
+- [ ] SIDE-003 Row actions overlay the row instead of reserving space
+  The hover buttons (rename, delete, pin) sit in the row's flex layout, so they
+  reserve width on the right and truncate note names even though they're only
+  visible on hover. Instead, absolutely position the action cluster over the
+  right edge of the hovered row: same background as the hovered row, with a
+  short gradient fade on its left side so it can partially cover the end of the
+  name without a hard edge. The name gets the full row width when the pointer
+  is elsewhere. Applies to file rows, folder rows, and the Recent/Pinned
+  sections (shared FileRow).
+  - Visibility is driven by .row:hover, .row:focus-within, and .row.active
+    (src/index.css ~479–493) — the overlay background must match whichever
+    state is behind it (hover bg vs active bg, per theme), and keyboard focus
+    must still reveal the actions.
+  - Touch has no hover: .row.active .row-action keeps actions reachable on the
+    active row today — preserve that.
+  - Pure presentation, no new tests needed; verify visually — truncated names
+    get their full width back whenever the pointer is elsewhere.
+  - Independent of SIDE-001, but SIDE-001's pin button adds a third action,
+    making the reserved-width problem worse — do this soon after; no
+    @blocked_by.
