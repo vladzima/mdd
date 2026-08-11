@@ -13,7 +13,7 @@ import {
   type Vault,
 } from './vault'
 import { childrenOf, placeIn, remapOrder, sortTree, SORTS, type ManualOrder, type Sort } from './sort'
-import { dropAllowed, type DropAt } from './drag'
+import { dropAllowed, PIN_DIR, type DropAt } from './drag'
 import { tell } from './dialog'
 import { forgetSearchCache } from './search'
 import { isNarrow } from './layout'
@@ -30,6 +30,7 @@ const OUTLINE_WIDTH = 'mdd:outline-width'
 const COLLAPSED = 'mdd:collapsed-dirs'
 const SORT = 'mdd:sort'
 const MANUAL_ORDER = 'mdd:manual-order'
+const PINNED = 'mdd:pinned' // { [vault name]: pinned paths } — pins persist per vault
 
 export const THEMES = ['system', 'light', 'dark', 'vesper'] as const
 export type Theme = (typeof THEMES)[number]
@@ -130,6 +131,23 @@ function storedOrder(): ManualOrder {
   }
 }
 
+// Pins are keyed by the vault's name — the only identity a vault has here — so
+// two local folders that share a name share their pins. Accepted as an edge case.
+function pinnedMap(): Record<string, unknown> {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(PINNED) ?? '{}')
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function pinnedFor(vaultName: string): string[] {
+  const paths = pinnedMap()[vaultName]
+  // deduped: a duplicate would render twice and collide as a React key
+  return Array.isArray(paths) ? [...new Set(paths.filter((p): p is string => typeof p === 'string'))] : []
+}
+
 interface Store {
   vault: Vault | null
   pendingVault: FileSystemDirectoryHandle | null // restored, awaiting permission gesture
@@ -152,6 +170,7 @@ interface Store {
   theme: Theme
   sort: Sort
   manualOrder: ManualOrder
+  pinned: string[] // pinned paths for the open vault, in their kept order
   renamingRow: string | null // id of the row showing its name field
   drag: string | null // path being dragged
   dropAt: DropAt | null // where it would land if released now
@@ -172,6 +191,7 @@ interface Store {
   deleteDir: (path: string) => Promise<void>
   setRenaming: (row: string | null) => void
   setSort: (sort: Sort) => void
+  togglePin: (path: string) => void
   beginDrag: (path: string) => void
   hoverDrag: (at: DropAt | null) => void
   endDrag: () => void
@@ -192,7 +212,7 @@ export const useStore = create<Store>()((set, get) => {
     await get().vault?.close?.() // drop a previous SSH session before swapping vaults
     assetCache.clear() // object URLs from a previous vault would serve the wrong files
     forgetSearchCache()
-    set({ vault, pendingVault: null, vaultName: vault.name })
+    set({ vault, pendingVault: null, vaultName: vault.name, pinned: pinnedFor(vault.name) })
     await get().refreshTree()
     const last = localStorage.getItem(LAST_FILE)
     if (last) await get().openFile(last).catch(() => localStorage.removeItem(LAST_FILE))
@@ -208,6 +228,11 @@ export const useStore = create<Store>()((set, get) => {
     set({ manualOrder })
   }
 
+  function setPinned(pinned: string[]) {
+    localStorage.setItem(PINNED, JSON.stringify({ ...pinnedMap(), [get().vaultName]: pinned }))
+    set({ pinned })
+  }
+
   // Renaming or moving a folder takes everything under it along, so each path the
   // app is holding on to has to follow: the open note, the recents, which folders
   // are collapsed, and the manual order. `to === null` means it was deleted.
@@ -215,9 +240,10 @@ export const useStore = create<Store>()((set, get) => {
     const under = (p: string) => p === from || p.startsWith(`${from}/`)
     const moved = (p: string) => (to === null ? null : to + p.slice(from.length))
     const keep = (p: string | null): p is string => p !== null
-    const { activePath, recents, collapsedDirs, manualOrder } = get()
+    const { activePath, recents, collapsedDirs, manualOrder, pinned } = get()
 
     setRecents(recents.map((p) => (under(p) ? moved(p) : p)).filter(keep))
+    setPinned(pinned.map((p) => (under(p) ? moved(p) : p)).filter(keep))
     setManualOrder(remapOrder(manualOrder, from, to))
 
     const collapsed = new Set(
@@ -267,6 +293,7 @@ export const useStore = create<Store>()((set, get) => {
     theme: storedTheme(),
     sort: storedSort(),
     manualOrder: storedOrder(),
+    pinned: [],
     renamingRow: null,
     drag: null,
     dropAt: null,
@@ -332,6 +359,7 @@ export const useStore = create<Store>()((set, get) => {
         pendingVault: restored?.handle ?? null,
         vaultName: restored?.handle.name ?? '',
         tree: [],
+        pinned: [],
         activePath: null,
         doc: '',
         dirty: false,
@@ -465,6 +493,11 @@ export const useStore = create<Store>()((set, get) => {
       set({ sort })
     },
 
+    togglePin: (path) => {
+      const { pinned } = get()
+      setPinned(pinned.includes(path) ? pinned.filter((p) => p !== path) : [...pinned, path])
+    },
+
     beginDrag: (path) => set({ drag: path, dropAt: null }),
 
     hoverDrag: (at) => {
@@ -485,6 +518,11 @@ export const useStore = create<Store>()((set, get) => {
     applyDrop: async (path, at) => {
       const { vault, sort } = get()
       if (!vault || !dropAllowed(path, at)) return
+      if (at.dir === PIN_DIR) {
+        // a pin drop reorders the pinned list; nothing moves on disk
+        setPinned(placeIn(get().pinned, path, at.anchor, at.place))
+        return
+      }
       let moved = path
       if (dirOf(path) !== at.dir) {
         if (get().activePath === path) await get().saveNow()

@@ -388,6 +388,7 @@ button {
   margin-right: 4px;
   border-radius: 1px;
   background: var(--accent);
+  pointer-events: none; /* the line under the pointer must not steal the hit test */
 }
 
 /* While a drag is live the pointer is somewhere over the tree, and a row lighting

@@ -4,6 +4,8 @@ import CloseCircle from 'reicon-react/icons/CloseCircle'
 import FolderAdd from 'reicon-react/icons/FolderAdd'
 import NoteAdd from 'reicon-react/icons/NoteAdd'
 import Pen from 'reicon-react/icons/Pen'
+import Pin from 'reicon-react/icons/Pin'
+import PinOff from 'reicon-react/icons/PinOff'
 import SearchIcon from 'reicon-react/icons/Search'
 import Settings2 from 'reicon-react/icons/Settings2'
 import SidebarLeft from 'reicon-react/icons/SidebarLeft'
@@ -13,7 +15,7 @@ import SortTime from 'reicon-react/icons/SortTime'
 import SortV from 'reicon-react/icons/SortV'
 import Trash2 from 'reicon-react/icons/Trash2'
 import { ask, askText, tell } from './dialog'
-import { startDrag } from './drag'
+import { PIN_DIR, startDrag } from './drag'
 import { isNarrow } from './layout'
 import { useLingering } from './motion'
 import { startResize } from './resize'
@@ -28,6 +30,7 @@ export function Sidebar({ closing }: { closing?: boolean }) {
   const vaultName = useStore((s) => s.vaultName)
   const tree = useStore((s) => s.tree)
   const recents = useStore((s) => s.recents)
+  const pinned = useStore((s) => s.pinned)
   const sort = useStore((s) => s.sort)
   const manualOrder = useStore((s) => s.manualOrder)
   const createFile = useStore((s) => s.createFile)
@@ -83,6 +86,8 @@ export function Sidebar({ closing }: { closing?: boolean }) {
     return paths
   }, [tree])
   const recentShown = recents.filter((p) => existingPaths.has(p)).slice(0, 5)
+  // A pin outlives its note being deleted or renamed elsewhere; only show what exists.
+  const pinnedShown = pinned.filter((p) => existingPaths.has(p))
 
   return (
     <aside
@@ -166,7 +171,7 @@ export function Sidebar({ closing }: { closing?: boolean }) {
         {q ? (
           <Results hits={hits} query={q} scanning={scanning} />
         ) : (
-          <Tree sorted={sorted} recentShown={recentShown} />
+          <Tree sorted={sorted} recentShown={recentShown} pinnedShown={pinnedShown} />
         )}
       </nav>
       <div
@@ -177,27 +182,40 @@ export function Sidebar({ closing }: { closing?: boolean }) {
   )
 }
 
-function Tree({ sorted, recentShown }: { sorted: TreeNode[]; recentShown: string[] }) {
+function Tree({
+  sorted,
+  recentShown,
+  pinnedShown,
+}: {
+  sorted: TreeNode[]
+  recentShown: string[]
+  pinnedShown: string[]
+}) {
+  const baseName = (path: string) => path.split('/').pop()!.replace(/\.md$/, '')
   return (
     <>
+      {pinnedShown.length > 0 && (
+        // Pinned rows reorder among themselves by drag; to a tree drag the
+        // section is off-limits, like Recent.
+        <div data-nodrop>
+          <div className="section-label">Pinned</div>
+          {pinnedShown.map((path) => (
+            <FileRow key={path} path={path} name={baseName(path)} indent={10} pin />
+          ))}
+        </div>
+      )}
       {recentShown.length > 0 && (
-        <>
-          {/* Recent is a shortcut list, not a place in the tree — dropping onto it
-              would have to mean something, and nothing it could mean is useful. */}
-          <div data-nodrop>
-            <div className="section-label">Recent</div>
-            {recentShown.map((path) => (
-              <FileRow
-                key={path}
-                path={path}
-                name={path.split('/').pop()!.replace(/\.md$/, '')}
-                indent={10}
-                recent
-              />
-            ))}
-          </div>
-          <div className="section-label">Notes</div>
-        </>
+        // Recent is a shortcut list, not a place in the tree — dropping onto it
+        // would have to mean something, and nothing it could mean is useful.
+        <div data-nodrop>
+          <div className="section-label">Recent</div>
+          {recentShown.map((path) => (
+            <FileRow key={path} path={path} name={baseName(path)} indent={10} recent />
+          ))}
+        </div>
+      )}
+      {(pinnedShown.length > 0 || recentShown.length > 0) && (
+        <div className="section-label">Notes</div>
       )}
       {sorted.map((node) => (
         <Node key={node.path} node={node} depth={0} />
@@ -501,27 +519,31 @@ function DirRow({ node, depth }: { node: TreeNode; depth: number }) {
   )
 }
 
-// Shared by the tree and the Recent list — Recent used to render a bare name,
-// which left a freshly created note with no way to rename it.
+// Shared by the tree, the Recent list, and the Pinned section — Recent used to
+// render a bare name, which left a freshly created note with no way to rename it.
 function FileRow({
   path,
   name,
   indent,
   recent,
+  pin,
 }: {
   path: string
   name: string
   indent: number
   recent?: boolean
+  pin?: boolean
 }) {
   const activePath = useStore((s) => s.activePath)
   const openFile = useStore((s) => s.openFile)
   const deleteFile = useStore((s) => s.deleteFile)
+  const togglePin = useStore((s) => s.togglePin)
+  const isPinned = useStore((s) => s.pinned.includes(path))
   const dragging = useStore((s) => s.drag === path)
   // Recent is a shortcut list, not a place in the tree: reordering or reparenting
   // there would be meaningless, so it is not draggable and shows no drop line.
-  const insert = useInsertLine(recent ? null : path)
-  const rowId = recent ? `recent:${path}` : path
+  const insert = useInsertLine(recent ? null : path, pin)
+  const rowId = pin ? `pin:${path}` : recent ? `recent:${path}` : path
 
   return (
     <>
@@ -529,16 +551,28 @@ function FileRow({
       <div
         className={`row file${activePath === path ? ' active' : ''}${dragging ? ' is-dragging' : ''}`}
         style={{ paddingLeft: `${indent}px` }}
-        data-path={recent ? undefined : path}
+        data-path={recent || pin ? undefined : path}
+        data-pin={pin ? path : undefined}
         data-kind="file"
         role="treeitem"
         aria-selected={activePath === path}
         aria-label={name}
         tabIndex={-1}
-        onPointerDown={recent ? undefined : (e) => startDrag(e, path)}
+        onPointerDown={recent ? undefined : (e) => startDrag(e, path, pin)}
         onClick={() => void openFile(path)}
       >
         <RowName row={rowId} path={path} name={name} kind="file" />
+        <button
+          className="icon-btn row-action"
+          title={isPinned ? 'Unpin' : 'Pin'}
+          aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            togglePin(path)
+          }}
+        >
+          {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+        </button>
         <button
           className="icon-btn row-action"
           title="Rename"
@@ -629,12 +663,16 @@ function RowName({
   )
 }
 
-// Where the insertion line goes for this row, if anywhere. Only manual sort has
-// positions to insert at; the other modes decide the order themselves.
-function useInsertLine(path: string | null): 'before' | 'after' | null {
-  return useStore((s) =>
-    path && s.sort === 'manual' && s.dropAt?.anchor === path ? s.dropAt.place : null,
-  )
+// Where the insertion line goes for this row, if anywhere. Pins keep their own
+// order whatever the sort mode; tree rows only have positions under manual sort.
+// A note can sit in both places at once, so each row also checks that the drop
+// is of its own kind — otherwise both copies would show the line.
+function useInsertLine(path: string | null, pin?: boolean): 'before' | 'after' | null {
+  return useStore((s) => {
+    if (!path || s.dropAt?.anchor !== path) return null
+    if (pin) return s.dropAt.dir === PIN_DIR ? s.dropAt.place : null
+    return s.sort === 'manual' && s.dropAt.dir !== PIN_DIR ? s.dropAt.place : null
+  })
 }
 
 function DropLine({ indent }: { indent: number }) {

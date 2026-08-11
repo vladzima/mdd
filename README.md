@@ -27,6 +27,8 @@ machine, and over SSH they go straight between your browser and your own box.
   hold, so a swipe still scrolls)
 - **Sort** by name, by date edited, or manually — drag notes into whatever order
   you want and it sticks. Recent keeps its own order either way
+- **Pinned notes** — pin a note from its row and it sits in its own section at
+  the top of the sidebar; drag to reorder, and each vault remembers its own pins
 - **Search** (<kbd>⌘K</kbd>) across names and note text, with the matching line
   shown beside each hit. Names answer as you type; the text scan follows and
   remembers what it read, so searching again is instant

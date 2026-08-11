@@ -20,13 +20,30 @@ const MOUSE_SLOP = 5 // px of travel before a press counts as a drag
 const TOUCH_SLOP = 8 // px a finger may wander during the hold before it counts as a scroll
 const HOLD_MS = 400
 
-// A folder cannot be dropped into itself or into anything it contains.
+// The "folder" a pin reorder lands in. NUL never appears in a real path, so this
+// can share DropAt with the tree without ever colliding with one.
+export const PIN_DIR = '\0pin'
+
+// A folder cannot be dropped into itself or into anything it contains, and
+// dropping a row onto itself moves nothing.
 export function dropAllowed(path: string, at: DropAt): boolean {
-  return at.dir !== path && !at.dir.startsWith(`${path}/`)
+  return at.anchor !== path && at.dir !== path && !at.dir.startsWith(`${path}/`)
 }
 
-function dropFrom(x: number, y: number, manual: boolean): DropAt | null {
+function dropFrom(x: number, y: number, manual: boolean, pin: boolean): DropAt | null {
   const el = document.elementFromPoint(x, y)
+  // A pin drag reorders the pinned list and lands nowhere else. Its section sits
+  // inside data-nodrop (tree drags can't drop there), so this comes first.
+  if (pin) {
+    const row = el?.closest<HTMLElement>('[data-pin]')
+    if (!row) return null
+    const box = row.getBoundingClientRect()
+    return {
+      dir: PIN_DIR,
+      anchor: row.dataset.pin!,
+      place: y < box.top + box.height / 2 ? 'before' : 'after',
+    }
+  }
   if (el?.closest('[data-nodrop]')) return null
   const row = el?.closest<HTMLElement>('[data-path]')
   if (!row) {
@@ -43,7 +60,7 @@ function dropFrom(x: number, y: number, manual: boolean): DropAt | null {
   return { dir, anchor: path, place: y < box.top + box.height / 2 ? 'before' : 'after' }
 }
 
-export function startDrag(e: ReactPointerEvent<HTMLElement>, path: string): void {
+export function startDrag(e: ReactPointerEvent<HTMLElement>, path: string, pin = false): void {
   if (e.pointerType === 'mouse' && e.button !== 0) return
   const touch = e.pointerType !== 'mouse'
   const startX = e.clientX
@@ -54,7 +71,7 @@ export function startDrag(e: ReactPointerEvent<HTMLElement>, path: string): void
   const block = (ev: Event) => ev.preventDefault()
 
   const hover = (x: number, y: number) => {
-    const at = dropFrom(x, y, useStore.getState().sort === 'manual')
+    const at = dropFrom(x, y, useStore.getState().sort === 'manual', pin)
     useStore.getState().hoverDrag(at && dropAllowed(path, at) ? at : null)
   }
 

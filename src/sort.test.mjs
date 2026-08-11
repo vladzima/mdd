@@ -40,6 +40,11 @@ assert.deepEqual(placeIn(['a', 'b', 'c'], 'c', 'a', 'before'), ['c', 'a', 'b'])
 assert.deepEqual(placeIn(['a', 'b', 'c'], 'a', 'b', 'after'), ['b', 'a', 'c'])
 assert.deepEqual(placeIn(['a', 'b'], 'a', null, 'after'), ['b', 'a'])
 
+// dropping a row onto itself leaves everything where it was — without the guard
+// the row filtered itself out, missed its own anchor, and jumped to the end
+assert.deepEqual(placeIn(['a', 'b', 'c'], 'b', 'b', 'before'), ['a', 'b', 'c'])
+assert.deepEqual(placeIn(['a', 'b', 'c'], 'b', 'b', 'after'), ['a', 'b', 'c'])
+
 // A note renames itself the moment it grows a heading. If that dropped it out of
 // the manual order it would jump to the bottom of the list as you typed.
 assert.deepEqual(

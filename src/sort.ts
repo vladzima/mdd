@@ -54,6 +54,7 @@ export function placeIn(
   anchor: string | null,
   place: 'before' | 'after',
 ): string[] {
+  if (anchor === path) return shown // dropped onto itself: nothing moves
   const next = shown.filter((p) => p !== path)
   const i = anchor ? next.indexOf(anchor) : -1
   if (i === -1) return [...next, path] // dropped on the folder itself: append
