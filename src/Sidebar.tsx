@@ -4,8 +4,8 @@ import CloseCircle from 'reicon-react/icons/CloseCircle'
 import FolderAdd from 'reicon-react/icons/FolderAdd'
 import NoteAdd from 'reicon-react/icons/NoteAdd'
 import Pen from 'reicon-react/icons/Pen'
-import Pin from 'reicon-react/icons/Pin'
-import PinOff from 'reicon-react/icons/PinOff'
+import PinTack from 'reicon-react/icons/PinTack'
+import Thumbtack2 from 'reicon-react/icons/Thumbtack2'
 import SearchIcon from 'reicon-react/icons/Search'
 import Settings2 from 'reicon-react/icons/Settings2'
 import SidebarLeft from 'reicon-react/icons/SidebarLeft'
@@ -571,7 +571,8 @@ function FileRow({
             togglePin(path)
           }}
         >
-          {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+          {/* outline tack pins; the filled one marks a pinned note and unpins */}
+          {isPinned ? <PinTack size={14} /> : <Thumbtack2 size={14} />}
         </button>
         <button
           className="icon-btn row-action"
