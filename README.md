@@ -20,6 +20,8 @@ machine, and over SSH they go straight between your browser and your own box.
   both resolve against the vault
 - **Wikilinks** — `[[Note]]` and `[[Note|alias]]` navigate on click, and create
   the note if it doesn't exist yet
+- **Code blocks don't trap the cursor** — Enter on a blank line at the end of a
+  fenced block steps out of it, writing the closing fence if it was left open
 - **File tree** with folders — create, rename, and delete them (empty ones only,
   so a folder never takes your notes down with it)
 - **Drag to file** — move a note onto a folder, or into the space below the tree

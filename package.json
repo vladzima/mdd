@@ -15,6 +15,7 @@
     "test:relay": "node worker/relay.test.mjs",
     "test:search": "esbuild src/search.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.searchtest.mjs --log-level=error && node .searchtest.mjs; code=$?; rm -f .searchtest.mjs; exit $code",
     "test:sort": "esbuild src/sort.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.sorttest.mjs --log-level=error && node .sorttest.mjs; code=$?; rm -f .sorttest.mjs; exit $code",
+    "test:codeblock": "esbuild src/codeBlock.test.mjs --bundle --platform=node --format=esm --packages=external --outfile=.codeblocktest.mjs --log-level=error && node .codeblocktest.mjs; code=$?; rm -f .codeblocktest.mjs; exit $code",
     "test:layout": "node src/layout.test.mjs"
   },
   "dependencies": {

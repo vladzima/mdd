@@ -5,6 +5,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { tags as t } from '@lezer/highlight'
+import { exitCodeBlock } from './codeBlock'
 import { isTouch } from './layout'
 import { livePreview } from './livePreview'
 import { useStore } from './store'
@@ -87,6 +88,7 @@ export function Editor() {
                 return true
               },
             },
+            { key: 'Enter', run: exitCodeBlock },
             indentWithTab,
             ...defaultKeymap,
             ...historyKeymap,
